@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-xl shadow-md hover:shadow-xl transition-shadow duration-300;
+  }
+  
+  .btn-primary {
+    @apply bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-600 transition-colors duration-200;
+  }
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Naver Cafe 内容样式 */
+.cafe-content {
+  @apply prose prose-sm max-w-none;
+}
+
+.cafe-content img {
+  @apply rounded-lg max-w-full h-auto;
+}
+
+.cafe-content p {
+  @apply mb-3;
+}
+
+.cafe-content a {
+  @apply text-primary hover:underline;
+}
