@@ -11,6 +11,19 @@ export class CafeScraper {
         this.db = new ArticleDatabase(config.database.articlesFile);
         this.isRunning = false;
         
+        // 主播头像映射（使用 Soop Live 头像）
+        this.ISEDOL_AVATARS = {
+            '고세구': 'https://stimg.sooplive.co.kr/LOGO/go/gosegu2/m/gosegu2.webp',
+            '비챤': 'https://stimg.sooplive.co.kr/LOGO/vi/viichan6/m/viichan6.webp',
+            '아이네': 'https://stimg.sooplive.co.kr/LOGO/in/inehine/m/inehine.webp',
+            '릴파 LILPA': 'https://stimg.sooplive.co.kr/LOGO/li/lilpa0309/m/lilpa0309.webp',
+            '릴파': 'https://stimg.sooplive.co.kr/LOGO/li/lilpa0309/m/lilpa0309.webp',
+            '주르르': 'https://stimg.sooplive.co.kr/LOGO/co/cotton1217/m/cotton1217.webp',
+            '징버거': 'https://stimg.sooplive.co.kr/LOGO/ji/jingburger1/m/jingburger1.webp'
+        };
+        
+        this.DEFAULT_AVATAR = 'https://ssl.pstatic.net/static/cafe/cafe_pc/default/cafe_profile_70.png';
+        
         // 初始化代理
         if (this.proxyConfig.enabled) {
             this.proxyAgent = new HttpsProxyAgent(this.proxyConfig.url);
@@ -62,27 +75,20 @@ export class CafeScraper {
     }
 
     async fetchArticleDetail(articleId) {
-        const url = `${this.config.baseUrl}/gw/v4/cafes/${this.config.cafeId}/articles/${articleId}`;
+        // 使用 article.cafe.naver.com API（不需要认证）
+        const url = `https://article.cafe.naver.com/gw/v4/cafes/${this.config.cafeId}/articles/${articleId}`;
         
         try {
             const fetchOptions = {
+                method: 'GET',
+                redirect: 'follow',
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'application/json, text/plain, */*',
-                    'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7,zh-CN;q=0.6,zh;q=0.5',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Referer': `https://cafe.naver.com/steamindiegame`,
-                    'Origin': 'https://cafe.naver.com',
-                    'Sec-Fetch-Dest': 'empty',
-                    'Sec-Fetch-Mode': 'cors',
-                    'Sec-Fetch-Site': 'same-site',
-                    'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-                    'sec-ch-ua-mobile': '?0',
-                    'sec-ch-ua-platform': '"Windows"'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': '*/*',
+                    'Referer': `https://cafe.naver.com/steamindiegame/${articleId}`
                 }
             };
 
-            // 如果启用代理，添加代理配置
             if (this.proxyAgent) {
                 fetchOptions.agent = this.proxyAgent;
             }
@@ -90,13 +96,19 @@ export class CafeScraper {
             const response = await fetch(url, fetchOptions);
 
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
+                logger.warn('CafeScraper', `文章 ${articleId} 详情 API 返回 ${response.status}`);
+                return null;
             }
 
             const data = await response.json();
+            
+            if (data.result && data.result.article && data.result.article.contentHtml) {
+                logger.info('CafeScraper', `✓ 成功获取文章 ${articleId} 完整内容 (${data.result.article.contentHtml.length} 字符)`);
+            }
+            
             return data.result?.article || null;
         } catch (error) {
-            logger.error('CafeScraper', `获取文章 ${articleId} 详情失败: ${error.message}`);
+            logger.warn('CafeScraper', `获取文章 ${articleId} 详情失败: ${error.message}`);
             return null;
         }
     }
@@ -123,32 +135,52 @@ export class CafeScraper {
             return null;
         }
 
-        logger.info('CafeScraper', `正在获取文章 ${articleId}...`);
+        logger.info('CafeScraper', `处理文章 ${articleId}...`);
 
-        const detail = await this.fetchArticleDetail(articleId);
-        if (!detail) {
-            return null;
+        // 从列表项中提取基本信息
+        const writerInfo = articleItem.writerInfo || {};
+        const writerNick = writerInfo.nickName || 'Unknown';
+        
+        // 优先使用主播头像（Soop Live），否则使用默认头像
+        const writerImage = this.ISEDOL_AVATARS[writerNick] || this.DEFAULT_AVATAR;
+        
+        // 获取文章详情以获取完整的 contentHtml
+        const articleDetail = await this.fetchArticleDetail(articleId);
+        
+        let contentHtml = '';
+        let content = articleItem.summary || '';
+        
+        if (articleDetail && articleDetail.contentHtml) {
+            // 使用详情中的完整 HTML 内容
+            contentHtml = articleDetail.contentHtml;
+            // 从 HTML 中提取纯文本
+            content = this.extractTextFromHtml(contentHtml);
+        } else {
+            // 如果无法获取详情，使用 summary
+            contentHtml = content ? `<div class="article-content">${content.replace(/\n/g, '<br>')}</div>` : '';
         }
-
+        
         const article = {
-            articleId: detail.id,
-            subject: detail.subject,
-            content: this.extractTextFromHtml(detail.contentHtml),
-            contentHtml: detail.contentHtml,
-            writeDate: detail.writeDate,
-            writeDateFormatted: new Date(detail.writeDate).toLocaleString('zh-CN'),
+            articleId: articleItem.articleId,
+            subject: articleItem.subject,
+            content: content,
+            contentHtml: contentHtml,
+            writeDate: articleItem.writeDateTimestamp || Date.now(),
+            writeDateFormatted: new Date(articleItem.writeDateTimestamp || Date.now()).toLocaleString('zh-CN'),
             writer: {
-                nick: detail.writer.nick,
-                memberKey: detail.writer.memberKey,
-                memberLevel: detail.writer.memberLevel,
-                memberLevelName: detail.writer.memberLevelName
+                nick: writerNick,
+                image: writerImage,
+                memberKey: writerInfo.memberKey || '',
+                memberLevel: writerInfo.memberLevel || 0,
+                memberLevelName: writerInfo.memberLevelName || ''
             },
             menu: {
-                id: detail.menu.id,
-                name: detail.menu.name
+                id: articleItem.menuId,
+                name: articleItem.menuName || ''
             },
-            readCount: detail.readCount,
-            commentCount: detail.commentCount,
+            readCount: articleItem.readCount || 0,
+            commentCount: articleItem.commentCount || 0,
+            likeCount: articleItem.likeCount || 0,
             fetchedAt: new Date().toISOString()
         };
 
@@ -180,6 +212,7 @@ export class CafeScraper {
                 
                 logger.success('CafeScraper', `新文章: [${article.writer.nick}] ${article.subject}`);
                 
+                // 添加延迟避免请求过快
                 await this.sleep(1000);
             }
         }

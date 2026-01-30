@@ -1,16 +1,40 @@
+# 环境变量
+.env
+
 # 数据文件
 data/
 logs/
 
-# 环境变量
-.env
-
 # Node modules
 node_modules/
+web/node_modules/
+api-server/node_modules/
+
+# 构建产物
+dist/
+build/
+web/dist/
+*.tsbuildinfo
 
 # 日志文件
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 操作系统
+.DS_Store
+Thumbs.db
+desktop.ini
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# 临时文件
+*.tmp
+.cache/
+.temp/

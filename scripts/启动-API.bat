@@ -6,7 +6,7 @@ echo   启动 API 服务器
 echo ========================================
 echo.
 
-cd api-server
+cd ..\api-server
 echo 正在启动 Express 服务器...
 echo.
 npm start

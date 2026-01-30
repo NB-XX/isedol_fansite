@@ -6,7 +6,7 @@ echo   启动前端网站
 echo ========================================
 echo.
 
-cd web
+cd ..\web
 echo 正在启动 Vite 开发服务器...
 echo.
 npm run dev

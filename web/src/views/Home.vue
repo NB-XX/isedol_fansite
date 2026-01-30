@@ -20,7 +20,7 @@
       <!-- Streamers Section -->
       <section class="mb-12">
         <h2 class="text-2xl font-bold mb-6 text-gray-800">主播动态</h2>
-        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+        <div class="grid grid-cols-3 sm:grid-cols-6 gap-4">
           <div
             v-for="streamer in streamers"
             :key="streamer.id"
@@ -31,7 +31,7 @@
               <!-- Avatar with Rainbow Glow if Live -->
               <div
                 :class="[
-                  'relative w-full aspect-square rounded-full overflow-hidden',
+                  'relative w-20 h-20 mx-auto rounded-full overflow-hidden',
                   'transition-transform duration-300 group-hover:scale-105',
                   streamer.isLive ? 'animate-rainbow' : ''
                 ]"
@@ -40,17 +40,18 @@
                   :src="streamer.avatar"
                   :alt="streamer.name"
                   class="w-full h-full object-cover"
+                  @error="handleImageError"
                 />
                 <!-- Live Badge -->
                 <div
                   v-if="streamer.isLive"
-                  class="absolute bottom-0 left-0 right-0 bg-red-600 text-white text-xs py-1 text-center font-bold"
+                  class="absolute bottom-0 left-0 right-0 bg-red-600 text-white text-xs py-0.5 text-center font-bold"
                 >
                   LIVE
                 </div>
               </div>
               <!-- Name -->
-              <p class="mt-2 text-center font-medium text-gray-800 group-hover:text-primary transition-colors">
+              <p class="mt-2 text-center text-sm font-medium text-gray-800 group-hover:text-primary transition-colors">
                 {{ streamer.name }}
               </p>
             </div>
@@ -77,19 +78,26 @@
             <!-- Article Header -->
             <div class="flex items-start space-x-4 mb-4">
               <!-- Author Avatar -->
-              <img
-                :src="article.writer.image || '/default-avatar.png'"
-                :alt="article.writer.nick"
-                class="w-12 h-12 rounded-full object-cover flex-shrink-0"
-              />
+              <div class="w-12 h-12 rounded-full overflow-hidden bg-gray-200 flex-shrink-0">
+                <img
+                  v-if="article.writer.image"
+                  :src="article.writer.image"
+                  :alt="article.writer.nick"
+                  class="w-full h-full object-cover"
+                  @error="handleImageError"
+                />
+                <svg v-else class="w-6 h-6 text-gray-400 m-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
+                </svg>
+              </div>
               
               <!-- Author Info -->
               <div class="flex-1 min-w-0">
                 <div class="flex items-center space-x-2">
-                  <h3 class="font-bold text-gray-900 truncate">
-                    {{ article.writer.nick }}
+                  <h3 class="font-bold text-gray-900">
+                    {{ article.writer.nick || 'Unknown' }}
                   </h3>
-                  <span class="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
+                  <span v-if="article.writer.memberLevelName" class="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
                     {{ article.writer.memberLevelName }}
                   </span>
                 </div>
@@ -105,13 +113,13 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                   </svg>
-                  {{ article.readCount }}
+                  {{ article.readCount || 0 }}
                 </span>
                 <span class="flex items-center">
                   <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                   </svg>
-                  {{ article.commentCount }}
+                  {{ article.commentCount || 0 }}
                 </span>
               </div>
             </div>
@@ -123,8 +131,8 @@
 
             <!-- Article Content -->
             <div
-              class="cafe-content text-gray-700 leading-relaxed"
-              v-html="article.contentHtml"
+              class="cafe-content text-gray-700 leading-relaxed mb-4"
+              v-html="article.contentHtml || article.content"
             ></div>
 
             <!-- Article Footer -->
@@ -218,6 +226,14 @@ const loadMore = () => {
 
 const openStreamerModal = (streamer) => {
   selectedStreamer.value = streamer
+}
+
+const handleImageError = (event) => {
+  // 图片加载失败时使用默认头像（防止重复触发）
+  if (!event.target.dataset.errorHandled) {
+    event.target.dataset.errorHandled = 'true'
+    event.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23999"%3E%3Cpath d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/%3E%3C/svg%3E'
+  }
 }
 
 // Lifecycle

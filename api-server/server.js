@@ -1,15 +1,22 @@
 // api-server/server.js - API 服务器
 import express from 'express'
 import cors from 'cors'
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import crypto from 'crypto'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const app = express()
 const PORT = 8080
+
+// 图片缓存目录
+const CACHE_DIR = join(__dirname, '../cache/images')
+if (!existsSync(CACHE_DIR)) {
+  mkdirSync(CACHE_DIR, { recursive: true })
+}
 
 // Middleware
 app.use(cors())
@@ -91,35 +98,35 @@ app.get('/api/streamers', (req, res) => {
 
     // 主播配置（头像等信息）
     const streamerConfig = {
-      'ine': {
-        name: '아이네',
-        avatar: 'https://res.afreecatv.com/images/afmain/img_thumb_profile.gif',
-        streamUrlTemplate: 'https://play.sooplive.co.kr/ine/{broadNo}/embed'
-      },
-      'jingburger': {
-        name: '징버거',
-        avatar: 'https://res.afreecatv.com/images/afmain/img_thumb_profile.gif',
-        streamUrlTemplate: 'https://play.sooplive.co.kr/jingburger/{broadNo}/embed'
+      'gosegu': {
+        name: '고세구',
+        avatar: 'https://stimg.sooplive.co.kr/LOGO/go/gosegu2/m/gosegu2.webp',
+        streamUrlTemplate: 'https://play.sooplive.co.kr/gosegu/{broadNo}/embed'
       },
       'lilpa': {
         name: '릴파',
-        avatar: 'https://res.afreecatv.com/images/afmain/img_thumb_profile.gif',
+        avatar: 'https://stimg.sooplive.co.kr/LOGO/li/lilpa0309/m/lilpa0309.webp',
         streamUrlTemplate: 'https://play.sooplive.co.kr/lilpa/{broadNo}/embed'
       },
-      'jururu': {
-        name: '주르르',
-        avatar: 'https://res.afreecatv.com/images/afmain/img_thumb_profile.gif',
-        streamUrlTemplate: 'https://play.sooplive.co.kr/jururu/{broadNo}/embed'
-      },
-      'gosegu': {
-        name: '고세구',
-        avatar: 'https://res.afreecatv.com/images/afmain/img_thumb_profile.gif',
-        streamUrlTemplate: 'https://play.sooplive.co.kr/gosegu/{broadNo}/embed'
+      'ine': {
+        name: '아이네',
+        avatar: 'https://stimg.sooplive.co.kr/LOGO/in/inehine/m/inehine.webp',
+        streamUrlTemplate: 'https://play.sooplive.co.kr/ine/{broadNo}/embed'
       },
       'viichan': {
         name: '비챤',
-        avatar: 'https://res.afreecatv.com/images/afmain/img_thumb_profile.gif',
+        avatar: 'https://stimg.sooplive.co.kr/LOGO/vi/viichan6/m/viichan6.webp',
         streamUrlTemplate: 'https://play.sooplive.co.kr/viichan/{broadNo}/embed'
+      },
+      'jingburger': {
+        name: '징버거',
+        avatar: 'https://stimg.sooplive.co.kr/LOGO/ji/jingburger1/m/jingburger1.webp',
+        streamUrlTemplate: 'https://play.sooplive.co.kr/jingburger/{broadNo}/embed'
+      },
+      'jururu': {
+        name: '주르르',
+        avatar: 'https://stimg.sooplive.co.kr/LOGO/co/cotton1217/m/cotton1217.webp',
+        streamUrlTemplate: 'https://play.sooplive.co.kr/jururu/{broadNo}/embed'
       }
     }
 
@@ -179,6 +186,74 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString()
   })
 })
+
+// 图片代理和缓存
+app.get('/api/image-proxy', async (req, res) => {
+  try {
+    const imageUrl = req.query.url
+    
+    if (!imageUrl) {
+      return res.status(400).json({ error: '缺少 url 参数' })
+    }
+
+    // 生成缓存文件名（使用 URL 的 MD5 哈希）
+    const hash = crypto.createHash('md5').update(imageUrl).digest('hex')
+    const ext = imageUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)?.[0] || '.jpg'
+    const cacheFileName = `${hash}${ext}`
+    const cachePath = join(CACHE_DIR, cacheFileName)
+
+    // 检查缓存
+    if (existsSync(cachePath)) {
+      console.log(`[缓存命中] ${imageUrl}`)
+      const image = readFileSync(cachePath)
+      const contentType = getContentType(ext)
+      res.setHeader('Content-Type', contentType)
+      res.setHeader('Cache-Control', 'public, max-age=31536000') // 1年缓存
+      return res.send(image)
+    }
+
+    // 下载图片
+    console.log(`[下载图片] ${imageUrl}`)
+    const response = await fetch(imageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://cafe.naver.com/'
+      }
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const buffer = await response.arrayBuffer()
+    const imageBuffer = Buffer.from(buffer)
+
+    // 保存到缓存
+    writeFileSync(cachePath, imageBuffer)
+    console.log(`[缓存成功] ${cacheFileName}`)
+
+    // 返回图片
+    const contentType = getContentType(ext)
+    res.setHeader('Content-Type', contentType)
+    res.setHeader('Cache-Control', 'public, max-age=31536000')
+    res.send(imageBuffer)
+  } catch (error) {
+    console.error('图片代理失败:', error.message)
+    res.status(500).json({ error: '图片加载失败' })
+  }
+})
+
+// 获取内容类型
+function getContentType(ext) {
+  const types = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp'
+  }
+  return types[ext.toLowerCase()] || 'image/jpeg'
+}
 
 // 启动服务器
 app.listen(PORT, () => {

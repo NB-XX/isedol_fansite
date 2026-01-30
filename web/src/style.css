@@ -36,19 +36,130 @@
   background: #555;
 }
 
-/* Naver Cafe 内容样式 */
+/* Naver Cafe 内容样式 - 基础样式 */
 .cafe-content {
   @apply prose prose-sm max-w-none;
+  line-height: 1.6;
 }
 
+/* Naver Smart Editor 样式 */
+.se-viewer {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #333;
+}
+
+.se-main-container {
+  width: 100%;
+}
+
+.se-component {
+  margin-bottom: 20px;
+}
+
+/* 图片样式 */
+.se-component-content img,
+.se-image-resource,
 .cafe-content img {
-  @apply rounded-lg max-w-full h-auto;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 10px 0;
 }
 
-.cafe-content p {
-  @apply mb-3;
+.se-section-image {
+  text-align: center;
 }
 
-.cafe-content a {
+.se-module-image-link {
+  display: inline-block;
+  cursor: pointer;
+}
+
+/* 文本样式 */
+.se-text-paragraph {
+  margin: 8px 0;
+  line-height: 1.8;
+}
+
+.se-text-paragraph-align-center {
+  text-align: center;
+}
+
+.se-text-paragraph-align-left {
+  text-align: left;
+}
+
+.se-text-paragraph-align-right {
+  text-align: right;
+}
+
+/* 字体样式 */
+.se-ff-nanumbareunhipi {
+  font-family: "Nanum Barun Gothic", "맑은 고딕", "Malgun Gothic", sans-serif;
+}
+
+/* 链接样式 */
+.cafe-content a,
+.se-viewer a {
   @apply text-primary hover:underline;
+}
+
+/* 段落样式 */
+.cafe-content p {
+  @apply mb-3 text-gray-700;
+}
+
+/* 标题样式 */
+.cafe-content h1, .cafe-content h2, .cafe-content h3 {
+  @apply font-bold text-gray-900 mt-4 mb-2;
+}
+
+/* 列表样式 */
+.cafe-content ul, .cafe-content ol {
+  @apply ml-6 mb-3;
+}
+
+.cafe-content li {
+  @apply mb-1;
+}
+
+/* 引用块样式 */
+.cafe-content blockquote {
+  @apply border-l-4 border-gray-300 pl-4 italic text-gray-600 my-4;
+}
+
+/* 代码块样式 */
+.cafe-content pre {
+  @apply bg-gray-100 p-4 rounded-lg overflow-x-auto my-4;
+}
+
+.cafe-content code {
+  @apply bg-gray-100 px-2 py-1 rounded text-sm;
+}
+
+/* 表格样式 */
+.cafe-content table {
+  @apply w-full border-collapse my-4;
+}
+
+.cafe-content th, .cafe-content td {
+  @apply border border-gray-300 px-4 py-2;
+}
+
+.cafe-content th {
+  @apply bg-gray-100 font-bold;
+}
+
+/* 隐藏不需要的元素 */
+.se-viewer script,
+.__se_module_data {
+  display: none;
+}
+
+/* 视频/嵌入内容样式 */
+.se-component-content iframe {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 10px 0;
 }

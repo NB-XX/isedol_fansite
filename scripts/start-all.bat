@@ -9,15 +9,15 @@ echo.
 pause
 
 echo [1/3] 启动数据采集系统...
-start "数据采集系统" cmd /k "title 数据采集系统 && node index.js all"
+start "数据采集系统" cmd /k "title 数据采集系统 && cd .. && node index.js all"
 timeout /t 3 >nul
 
 echo [2/3] 启动 API 服务器...
-start "API服务器" cmd /k "title API服务器 - http://localhost:8080 && cd api-server && node server.js"
+start "API服务器" cmd /k "title API服务器 - http://localhost:8080 && cd ..\api-server && node server.js"
 timeout /t 3 >nul
 
 echo [3/3] 启动前端网站...
-start "前端网站" cmd /k "title 前端网站 - http://localhost:3000 && cd web && npm run dev"
+start "前端网站" cmd /k "title 前端网站 - http://localhost:3000 && cd ..\web && npm run dev"
 timeout /t 5 >nul
 
 echo.

@@ -46,6 +46,12 @@ class Logger {
         this.log('info', module, message, data);
     }
 
+    debug(module, message, data) {
+        if (this.level === 'debug') {
+            this.log('debug', module, message, data);
+        }
+    }
+
     warn(module, message, data) {
         this.log('warn', module, message, data);
     }
