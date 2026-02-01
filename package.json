@@ -1,7 +1,7 @@
 {
   "name": "isedol_fansite",
-  "version": "2.0.0",
-  "description": "Isedol 粉丝站点数据采集系统",
+  "version": "3.1.0",
+  "description": "异世界女团粉丝站数据采集系统",
   "main": "index.js",
   "type": "module",
   "scripts": {
@@ -16,7 +16,20 @@
     "services:start": "node service-manager.js start",
     "services:stop": "node service-manager.js stop",
     "services:restart": "node service-manager.js restart",
-    "services:status": "node service-manager.js status"
+    "services:status": "node service-manager.js status",
+    "migrate": "node scripts/migrate-to-sqlite.js",
+    "db:update": "node scripts/update-database-schema.js",
+    "translate": "node translate.js translate",
+    "translate:test": "node translate.js test",
+    "translate:stats": "node translate.js stats",
+    "translate:retranslate": "node translate.js retranslate",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop isedol-fansite",
+    "pm2:restart": "pm2 restart isedol-fansite",
+    "pm2:reload": "pm2 reload isedol-fansite",
+    "pm2:delete": "pm2 delete isedol-fansite",
+    "pm2:logs": "pm2 logs isedol-fansite",
+    "pm2:monit": "pm2 monit"
   },
   "keywords": [
     "isedol",
@@ -26,6 +39,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "better-sqlite3": "^12.6.2",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^5.2.1",

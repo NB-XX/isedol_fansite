@@ -3,7 +3,7 @@ import { api } from './src/api/index.js';
 import { logger } from './src/utils/logger.js';
 
 console.log('='.repeat(60));
-console.log('🚀 Isedol 粉丝站点数据采集系统');
+console.log('🚀 异世界女团粉丝站数据采集系统');
 console.log('='.repeat(60));
 
 // 解析命令行参数

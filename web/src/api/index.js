@@ -11,11 +11,17 @@ export const fetchArticles = async (limit = 20) => {
     const response = await api.get('/articles', {
       params: { limit }
     })
-    return response.data.articles || []
+    return {
+      articles: response.data.articles || [],
+      lastUpdate: response.data.lastUpdate || null
+    }
   } catch (error) {
     console.error('获取文章失败:', error)
     // 返回模拟数据用于开发
-    return getMockArticles()
+    return {
+      articles: getMockArticles(),
+      lastUpdate: Date.now()
+    }
   }
 }
 

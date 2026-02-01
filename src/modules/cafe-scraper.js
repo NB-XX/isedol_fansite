@@ -1,14 +1,18 @@
 // src/modules/cafe-scraper.js - Naver Cafe 爬虫模块
+import https from 'https';
+import zlib from 'zlib';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { ArticleDatabase } from '../database/index.js';
+import { Translator } from './translator.js';
 
 export class CafeScraper {
     constructor() {
         this.config = config.cafe;
         this.proxyConfig = config.proxy;
         this.db = new ArticleDatabase(config.database.articlesFile);
+        this.translator = new Translator();
         this.isRunning = false;
         
         // 主播头像映射（使用 Soop Live 头像）
@@ -34,11 +38,75 @@ export class CafeScraper {
         }
     }
 
+    // 使用原生 https 模块进行请求，支持代理
+    async fetchWithProxy(url, options = {}) {
+        return new Promise((resolve, reject) => {
+            const urlObj = new URL(url);
+            const requestOptions = {
+                hostname: urlObj.hostname,
+                port: urlObj.port || 443,
+                path: urlObj.pathname + urlObj.search,
+                method: options.method || 'GET',
+                headers: options.headers || {},
+                agent: this.proxyAgent
+            };
+
+            const req = https.request(requestOptions, (res) => {
+                let stream = res;
+                
+                // 处理压缩响应
+                const encoding = res.headers['content-encoding'];
+                if (encoding === 'gzip') {
+                    stream = res.pipe(zlib.createGunzip());
+                } else if (encoding === 'deflate') {
+                    stream = res.pipe(zlib.createInflate());
+                } else if (encoding === 'br') {
+                    stream = res.pipe(zlib.createBrotliDecompress());
+                }
+                
+                let data = '';
+                stream.setEncoding('utf8');
+                
+                stream.on('data', (chunk) => {
+                    data += chunk;
+                });
+                
+                stream.on('end', () => {
+                    try {
+                        const jsonData = JSON.parse(data);
+                        resolve({ 
+                            ok: res.statusCode >= 200 && res.statusCode < 300, 
+                            status: res.statusCode, 
+                            data: jsonData 
+                        });
+                    } catch (error) {
+                        reject(new Error(`JSON parse error: ${error.message}, data: ${data.substring(0, 100)}`));
+                    }
+                });
+                
+                stream.on('error', (error) => {
+                    reject(error);
+                });
+            });
+
+            req.on('error', (error) => {
+                reject(error);
+            });
+
+            req.setTimeout(30000, () => {
+                req.destroy();
+                reject(new Error('Request timeout'));
+            });
+
+            req.end();
+        });
+    }
+
     async fetchArticleList(page = 1) {
         const url = `${this.config.baseUrl}/cafe-web/cafe-boardlist-api/v1/cafes/${this.config.cafeId}/menus/${this.config.menuId}/articles?page=${page}&pageSize=${this.config.pageSize}&sortBy=TIME&viewType=L`;
         
         try {
-            const fetchOptions = {
+            const response = await this.fetchWithProxy(url, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Accept': 'application/json, text/plain, */*',
@@ -53,21 +121,13 @@ export class CafeScraper {
                     'sec-ch-ua-mobile': '?0',
                     'sec-ch-ua-platform': '"Windows"'
                 }
-            };
-
-            // 如果启用代理，添加代理配置
-            if (this.proxyAgent) {
-                fetchOptions.agent = this.proxyAgent;
-            }
-
-            const response = await fetch(url, fetchOptions);
+            });
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
 
-            const data = await response.json();
-            return data.result?.articleList || [];
+            return response.data.result?.articleList || [];
         } catch (error) {
             logger.error('CafeScraper', `获取文章列表失败: ${error.message}`);
             return [];
@@ -79,28 +139,21 @@ export class CafeScraper {
         const url = `https://article.cafe.naver.com/gw/v4/cafes/${this.config.cafeId}/articles/${articleId}`;
         
         try {
-            const fetchOptions = {
+            const response = await this.fetchWithProxy(url, {
                 method: 'GET',
-                redirect: 'follow',
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Accept': '*/*',
                     'Referer': `https://cafe.naver.com/steamindiegame/${articleId}`
                 }
-            };
-
-            if (this.proxyAgent) {
-                fetchOptions.agent = this.proxyAgent;
-            }
-
-            const response = await fetch(url, fetchOptions);
+            });
 
             if (!response.ok) {
                 logger.warn('CafeScraper', `文章 ${articleId} 详情 API 返回 ${response.status}`);
                 return null;
             }
 
-            const data = await response.json();
+            const data = response.data;
             
             if (data.result && data.result.article && data.result.article.contentHtml) {
                 logger.info('CafeScraper', `✓ 成功获取文章 ${articleId} 完整内容 (${data.result.article.contentHtml.length} 字符)`);
@@ -148,15 +201,16 @@ export class CafeScraper {
         const articleDetail = await this.fetchArticleDetail(articleId);
         
         let contentHtml = '';
-        let content = articleItem.summary || '';
+        let content = '';
         
         if (articleDetail && articleDetail.contentHtml) {
-            // 使用详情中的完整 HTML 内容
+            // 保留完整的 HTML 内容（包含格式、图片、贴纸等）
             contentHtml = articleDetail.contentHtml;
-            // 从 HTML 中提取纯文本
+            // 从完整 HTML 中提取纯文本用于搜索和预览
             content = this.extractTextFromHtml(contentHtml);
         } else {
-            // 如果无法获取详情，使用 summary
+            // 如果无法获取详情，使用 summary 作为降级方案
+            content = articleItem.summary || '';
             contentHtml = content ? `<div class="article-content">${content.replace(/\n/g, '<br>')}</div>` : '';
         }
         
@@ -207,6 +261,19 @@ export class CafeScraper {
             const article = await this.processArticle(item.item);
             
             if (article) {
+                // 如果启用翻译，自动翻译新文章
+                if (this.translator.isEnabled) {
+                    try {
+                        logger.info('CafeScraper', `翻译文章: ${article.articleId}`);
+                        const translation = await this.translator.translateArticle(article);
+                        article.subjectTranslated = translation.subjectTranslated;
+                        article.contentTranslated = translation.contentTranslated;
+                        article.translatedAt = new Date().toISOString();
+                    } catch (error) {
+                        logger.error('CafeScraper', `翻译失败: ${error.message}`);
+                    }
+                }
+                
                 this.db.addArticle(article);
                 newCount++;
                 

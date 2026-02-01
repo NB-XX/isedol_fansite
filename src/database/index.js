@@ -1,147 +1,141 @@
-// src/database/index.js - 统一数据库管理
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { dirname } from 'path';
+// src/database/index.js - 统一数据库管理（SQLite 版本）
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import SQLiteDatabase from './sqlite.js';
 import { logger } from '../utils/logger.js';
 
-class Database {
-    constructor(filePath, moduleName) {
-        this.filePath = filePath;
-        this.moduleName = moduleName;
-        this.data = this.load();
-    }
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-    ensureDir() {
-        const dir = dirname(this.filePath);
-        if (!existsSync(dir)) {
-            mkdirSync(dir, { recursive: true });
-        }
-    }
+// 数据库路径
+const DB_PATH = join(__dirname, '../../data/database.db');
 
-    load() {
-        this.ensureDir();
-        
-        if (existsSync(this.filePath)) {
-            try {
-                const content = readFileSync(this.filePath, 'utf-8');
-                return JSON.parse(content);
-            } catch (error) {
-                logger.error(this.moduleName, `读取数据库失败: ${error.message}`);
-                return this.getDefaultData();
-            }
-        }
-        return this.getDefaultData();
-    }
+// 单例模式 - 共享同一个数据库连接
+let dbInstance = null;
 
-    save() {
-        try {
-            this.ensureDir();
-            writeFileSync(this.filePath, JSON.stringify(this.data, null, 2), 'utf-8');
-            logger.info(this.moduleName, '数据已保存');
-        } catch (error) {
-            logger.error(this.moduleName, `保存数据库失败: ${error.message}`);
-        }
+function getDatabase() {
+    if (!dbInstance) {
+        dbInstance = new SQLiteDatabase(DB_PATH);
     }
-
-    getDefaultData() {
-        return {};
-    }
+    return dbInstance;
 }
 
-// 文章数据库
-export class ArticleDatabase extends Database {
-    constructor(filePath) {
-        super(filePath, 'ArticleDB');
-    }
-
-    getDefaultData() {
-        return {
-            articles: {},
-            lastUpdate: null,
-            stats: {
-                total: 0,
-                lastArticleId: null
-            }
-        };
+// 文章数据库适配器
+export class ArticleDatabase {
+    constructor() {
+        this.db = getDatabase();
+        this.moduleName = 'ArticleDB';
     }
 
     hasArticle(articleId) {
-        return !!this.data.articles[articleId];
+        return this.db.hasArticle(articleId);
     }
 
     addArticle(article) {
-        this.data.articles[article.articleId] = article;
-        this.data.lastUpdate = new Date().toISOString();
-        this.data.stats.total = Object.keys(this.data.articles).length;
-        this.data.stats.lastArticleId = article.articleId;
+        const success = this.db.addArticle(article);
+        if (success) {
+            logger.info(this.moduleName, `文章已添加: ${article.articleId}`);
+        }
     }
 
     getArticleCount() {
-        return Object.keys(this.data.articles).length;
+        return this.db.getArticleCount();
     }
 
     getLatestArticles(count = 5) {
-        return Object.values(this.data.articles)
-            .sort((a, b) => b.writeDate - a.writeDate)
-            .slice(0, count);
+        return this.db.getLatestArticles(count);
     }
 
     getAllArticles() {
-        return Object.values(this.data.articles);
+        return this.db.getAllArticles();
+    }
+
+    getLastUpdate() {
+        return this.db.getLastUpdate();
+    }
+
+    // 兼容旧代码的 save 方法（SQLite 自动保存，无需手动调用）
+    save() {
+        // SQLite 自动提交事务，无需手动保存
     }
 }
 
-// 直播状态数据库
-export class StreamDatabase extends Database {
-    constructor(filePath) {
-        super(filePath, 'StreamDB');
+// 直播状态数据库适配器
+export class StreamDatabase {
+    constructor() {
+        this.db = getDatabase();
+        this.moduleName = 'StreamDB';
+        
+        // 主播配置
+        this.streamerConfig = {
+            'gosegu': { name: '고세구', avatar: 'https://stimg.sooplive.co.kr/LOGO/go/gosegu2/m/gosegu2.webp', bjId: 'gosegu2' },
+            'ine': { name: '아이네', avatar: 'https://stimg.sooplive.co.kr/LOGO/in/inehine/m/inehine.webp', bjId: 'inehine' },
+            'jingburger': { name: '징버거', avatar: 'https://stimg.sooplive.co.kr/LOGO/ji/jingburger1/m/jingburger1.webp', bjId: 'jingburger1' },
+            'jururu': { name: '주르르', avatar: 'https://stimg.sooplive.co.kr/LOGO/co/cotton1217/m/cotton1217.webp', bjId: 'cotton1217' },
+            'lilpa': { name: '릴파', avatar: 'https://stimg.sooplive.co.kr/LOGO/li/lilpa0309/m/lilpa0309.webp', bjId: 'lilpa0309' },
+            'viichan': { name: '비챤', avatar: 'https://stimg.sooplive.co.kr/LOGO/vi/viichan6/m/viichan6.webp', bjId: 'viichan6' }
+        };
+        
+        // 初始化主播信息
+        this.initStreamers();
     }
 
-    getDefaultData() {
-        return {
-            streams: {},
-            history: [],
-            lastUpdate: null
-        };
+    initStreamers() {
+        for (const [streamerId, config] of Object.entries(this.streamerConfig)) {
+            this.db.addOrUpdateStreamer(streamerId, config.name, config.avatar, config.bjId);
+        }
     }
 
     updateStream(streamerId, streamData) {
-        const previous = this.data.streams[streamerId];
-        this.data.streams[streamerId] = {
+        // 强制使用配置中的中文名字，忽略 Firebase 返回的 name
+        const enrichedData = {
             ...streamData,
-            updatedAt: new Date().toISOString()
+            name: this.streamerConfig[streamerId]?.name || streamData.name || streamerId
         };
-        this.data.lastUpdate = new Date().toISOString();
-
-        // 记录状态变化
-        if (previous && previous.online !== streamData.online) {
-            this.addHistory({
-                streamerId,
-                name: streamData.name,
-                action: streamData.online ? 'start' : 'end',
-                title: streamData.title,
-                category: streamData.category,
-                timestamp: new Date().toISOString()
-            });
-        }
-    }
-
-    addHistory(record) {
-        this.data.history.push(record);
-        // 只保留最近1000条记录
-        if (this.data.history.length > 1000) {
-            this.data.history = this.data.history.slice(-1000);
-        }
+        this.db.updateStreamStatus(streamerId, enrichedData);
     }
 
     getStream(streamerId) {
-        return this.data.streams[streamerId];
+        return this.db.getStreamStatus(streamerId);
     }
 
     getAllStreams() {
-        return this.data.streams;
+        return this.db.getAllStreamStatus();
     }
 
     getHistory(limit = 50) {
-        return this.data.history.slice(-limit).reverse();
+        return this.db.getStreamHistory(limit);
+    }
+
+    getStreamerHistory(streamerId, limit = 20) {
+        return this.db.getStreamerHistory(streamerId, limit);
+    }
+
+    addStreamEvent(event) {
+        this.db.addStreamHistory({
+            streamerId: event.streamerId,
+            name: event.name,
+            action: event.action,
+            title: event.title,
+            category: event.category,
+            timestamp: new Date().toISOString(),
+            metadata: JSON.stringify({
+                oldTitle: event.oldTitle,
+                oldCategory: event.oldCategory
+            }),
+            broadNo: event.broadNo || null
+        });
+    }
+
+    getLastUpdate() {
+        return this.db.getLastStreamUpdate();
+    }
+
+    // 兼容旧代码的 save 方法（SQLite 自动保存，无需手动调用）
+    save() {
+        // SQLite 自动提交事务，无需手动保存
     }
 }
+
+// 导出数据库实例获取函数（用于需要直接访问数据库的场景）
+export { getDatabase };

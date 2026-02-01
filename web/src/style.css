@@ -10,12 +10,43 @@
 
 @layer components {
   .card {
-    @apply bg-white rounded-xl shadow-md hover:shadow-xl transition-shadow duration-300;
+    @apply bg-white/60 backdrop-blur-md rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 border border-white/50;
   }
-  
+
+  .glass {
+    @apply bg-white/70 backdrop-blur-lg border border-white/40 shadow-sm;
+  }
+
+  .glass-header {
+    @apply bg-white/80 backdrop-blur-xl border-b border-white/40 shadow-sm;
+  }
+
   .btn-primary {
-    @apply bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-600 transition-colors duration-200;
+    @apply bg-gradient-to-r from-green-400 to-emerald-500 text-white px-6 py-2 rounded-xl shadow-md hover:shadow-lg hover:from-green-500 hover:to-emerald-600 transition-all duration-300 transform hover:-translate-y-0.5;
   }
+}
+
+/* Animations */
+@keyframes float {
+  0% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-5px);
+  }
+
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.hover-glow:hover {
+  box-shadow: 0 0 15px rgba(52, 211, 153, 0.5);
 }
 
 /* 自定义滚动条 */
@@ -111,12 +142,15 @@
 }
 
 /* 标题样式 */
-.cafe-content h1, .cafe-content h2, .cafe-content h3 {
+.cafe-content h1,
+.cafe-content h2,
+.cafe-content h3 {
   @apply font-bold text-gray-900 mt-4 mb-2;
 }
 
 /* 列表样式 */
-.cafe-content ul, .cafe-content ol {
+.cafe-content ul,
+.cafe-content ol {
   @apply ml-6 mb-3;
 }
 
@@ -143,7 +177,8 @@
   @apply w-full border-collapse my-4;
 }
 
-.cafe-content th, .cafe-content td {
+.cafe-content th,
+.cafe-content td {
   @apply border border-gray-300 px-4 py-2;
 }
 
@@ -162,4 +197,25 @@
   max-width: 100%;
   border-radius: 8px;
   margin: 10px 0;
+}
+
+/* 3D Flip Utilities */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+}
+
+.rotate-y-180 {
+  transform: rotateY(180deg);
+}
+
+.rotate-y-0 {
+  transform: rotateY(0deg);
 }

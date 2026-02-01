@@ -347,7 +347,7 @@ async function main() {
   const command = args[0];
   
   log('\n' + '='.repeat(60), 'bright');
-  log('  Isedol 粉丝站 - 服务管理器', 'bright');
+  log('  异世界女团粉丝站 - 服务管理器', 'bright');
   log('='.repeat(60), 'bright');
   
   if (!command) {

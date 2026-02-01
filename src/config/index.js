@@ -46,5 +46,17 @@ export const config = {
     logging: {
         level: process.env.LOG_LEVEL || 'info',
         file: process.env.LOG_FILE || './logs/app.log'
+    },
+
+    // AI 翻译配置
+    translation: {
+        enabled: process.env.TRANSLATION_ENABLED === 'true',
+        apiUrl: process.env.TRANSLATION_API_URL || 'https://api.openai.com/v1/chat/completions',
+        apiKey: process.env.TRANSLATION_API_KEY || '',
+        model: process.env.TRANSLATION_MODEL || 'gpt-3.5-turbo',
+        systemPrompt: process.env.TRANSLATION_SYSTEM_PROMPT || '你是一个专业的韩中翻译助手。请将用户提供的韩语文本翻译成简体中文。保持原文的语气和风格，确保翻译自然流畅。只返回翻译结果，不要添加任何解释或额外内容。',
+        temperature: parseFloat(process.env.TRANSLATION_TEMPERATURE) || 0.3,
+        maxTokens: parseInt(process.env.TRANSLATION_MAX_TOKENS) || 2000,
+        timeout: parseInt(process.env.TRANSLATION_TIMEOUT) || 30000 // 30秒超时
     }
 };
