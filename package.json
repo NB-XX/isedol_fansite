@@ -19,6 +19,7 @@
     "services:status": "node service-manager.js status",
     "migrate": "node scripts/migrate-to-sqlite.js",
     "db:update": "node scripts/update-database-schema.js",
+    "db:add-source": "node scripts/add-source-field.js",
     "translate": "node translate.js translate",
     "translate:test": "node translate.js test",
     "translate:stats": "node translate.js stats",
@@ -39,6 +40,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "axios": "^1.13.4",
     "better-sqlite3": "^12.6.2",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",

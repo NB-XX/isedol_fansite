@@ -27,13 +27,13 @@ export const config = {
 
     // Firebase 配置
     firebase: {
-        apiKey: process.env.FIREBASE_API_KEY || "AIzaSyDbKOeYwK8qAynN6oJxPinJP5_-z3Nqkp0",
-        authDomain: process.env.FIREBASE_AUTH_DOMAIN || "isekaidol-stream-noti.firebaseapp.com",
-        projectId: process.env.FIREBASE_PROJECT_ID || "isekaidol-stream-noti",
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "isekaidol-stream-noti.appspot.com",
-        messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "532310069194",
-        appId: process.env.FIREBASE_APP_ID || "1:532310069194:web:50a30481a66c0f0ca6c933",
-        databaseURL: process.env.FIREBASE_DATABASE_URL || "https://isekaidol-stream-noti-default-rtdb.asia-southeast1.firebasedatabase.app/"
+        apiKey: process.env.FIREBASE_API_KEY || "",
+        authDomain: process.env.FIREBASE_AUTH_DOMAIN || "",
+        projectId: process.env.FIREBASE_PROJECT_ID || "",
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "",
+        messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "",
+        appId: process.env.FIREBASE_APP_ID || "",
+        databaseURL: process.env.FIREBASE_DATABASE_URL || ""
     },
 
     // 数据库配置

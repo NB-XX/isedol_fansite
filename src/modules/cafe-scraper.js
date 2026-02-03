@@ -219,6 +219,7 @@ export class CafeScraper {
             subject: articleItem.subject,
             content: content,
             contentHtml: contentHtml,
+            textContent: articleItem.summary || '', // 纯文本内容，用于AI翻译
             writeDate: articleItem.writeDateTimestamp || Date.now(),
             writeDateFormatted: new Date(articleItem.writeDateTimestamp || Date.now()).toLocaleString('zh-CN'),
             writer: {
@@ -235,6 +236,7 @@ export class CafeScraper {
             readCount: articleItem.readCount || 0,
             commentCount: articleItem.commentCount || 0,
             likeCount: articleItem.likeCount || 0,
+            source: 'naver',
             fetchedAt: new Date().toISOString()
         };
 

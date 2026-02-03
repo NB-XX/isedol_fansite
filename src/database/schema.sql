@@ -4,12 +4,15 @@ CREATE TABLE IF NOT EXISTS articles (
     subject TEXT NOT NULL,
     content TEXT,
     content_html TEXT,
+    text_content TEXT,
     write_date INTEGER NOT NULL,
     write_date_formatted TEXT,
     
     -- 翻译字段
     subject_translated TEXT,
     content_translated TEXT,
+    content_html_translated TEXT,
+    is_ai_translated INTEGER DEFAULT 1,
     translated_at TEXT,
     
     -- 作者信息
@@ -27,6 +30,9 @@ CREATE TABLE IF NOT EXISTS articles (
     read_count INTEGER DEFAULT 0,
     comment_count INTEGER DEFAULT 0,
     like_count INTEGER DEFAULT 0,
+    
+    -- 来源标识
+    source TEXT DEFAULT 'naver',
     
     -- 元数据
     fetched_at TEXT NOT NULL,

@@ -94,11 +94,6 @@ class APIServer {
     this.app.use(cors());
     this.app.use(express.json());
     
-    // 测试路由 - 在中间件之后立即添加
-    this.app.get('/api/test-immediate', (req, res) => {
-      res.json({ message: 'Immediate route works!' });
-    });
-    
     // 请求日志
     this.app.use((req, res, next) => {
       const start = Date.now();
@@ -147,16 +142,46 @@ class APIServer {
       }
     };
 
-    // 获取文章列表
+    // 获取文章列表（基于游标的分页）
     this.app.get('/api/articles', (req, res) => {
       try {
         const limit = parseInt(req.query.limit) || 20;
-        const articles = db.getLatestArticles(limit);
+        const cursor = req.query.cursor ? parseInt(req.query.cursor) : null;
+        
+        // 获取所有文章（按时间降序）
+        const allArticles = db.getAllArticles();
+        
+        let articles;
+        if (cursor) {
+          // 找到游标位置，返回之后的文章
+          const cursorIndex = allArticles.findIndex(a => a.articleId === cursor);
+          if (cursorIndex === -1) {
+            // 游标无效，返回最新的文章
+            articles = allArticles.slice(0, limit);
+          } else {
+            // 返回游标之后的文章
+            articles = allArticles.slice(cursorIndex + 1, cursorIndex + 1 + limit);
+          }
+        } else {
+          // 没有游标，返回最新的文章
+          articles = allArticles.slice(0, limit);
+        }
+        
         const lastUpdate = db.getLastUpdate();
+        
+        // 判断是否还有更多
+        const hasMore = cursor 
+          ? allArticles.findIndex(a => a.articleId === cursor) + 1 + limit < allArticles.length
+          : limit < allArticles.length;
+        
+        // 返回下一个游标（最后一篇文章的 ID）
+        const nextCursor = articles.length > 0 ? articles[articles.length - 1].articleId : null;
 
         res.json({ 
           articles,
-          lastUpdate
+          lastUpdate,
+          hasMore,
+          nextCursor
         });
       } catch (error) {
         log('API', 'ERROR', `获取文章失败: ${error.message}`);
@@ -351,6 +376,116 @@ ${jsonString}`;
       }
     });
 
+    // 翻译单篇文章（AI翻译）
+    this.app.post('/api/articles/:id/translate', async (req, res) => {
+      try {
+        const articleId = parseInt(req.params.id);
+        
+        log('API', 'INFO', `翻译文章: ${articleId}`);
+        
+        // 获取文章
+        const article = db.getArticle(articleId);
+        if (!article) {
+          return res.status(404).json({ error: '文章不存在' });
+        }
+        
+        // 如果已有翻译，直接返回
+        if (article.subject_translated && article.content_translated) {
+          return res.json({
+            translation: {
+              subject: article.subject_translated,
+              content: article.content_html_translated || article.content_translated,
+              isAi: article.is_ai_translated === 1
+            }
+          });
+        }
+        
+        // 导入翻译模块
+        const { Translator } = await import('./src/modules/translator.js');
+        const translator = new Translator();
+        
+        if (!translator.isEnabled) {
+          return res.status(503).json({ error: '翻译功能未启用' });
+        }
+        
+        // 使用纯文本内容进行翻译
+        const textToTranslate = article.text_content || article.content || '';
+        
+        log('API', 'INFO', `翻译文本长度: ${textToTranslate.length} 字符`);
+        
+        // 翻译标题和内容
+        const subjectTranslated = await translator.translate(article.subject);
+        const contentTranslated = await translator.translate(textToTranslate);
+        
+        if (!subjectTranslated || !contentTranslated) {
+          throw new Error('翻译失败');
+        }
+        
+        // 保存翻译结果
+        db.updateArticleTranslation(articleId, {
+          subjectTranslated,
+          contentTranslated,
+          contentHtmlTranslated: contentTranslated.replace(/\n/g, '<br>'),
+          isAiTranslated: 1,
+          translatedAt: new Date().toISOString()
+        });
+        
+        log('API', 'SUCCESS', `文章 ${articleId} 翻译完成`);
+        
+        res.json({
+          translation: {
+            subject: subjectTranslated,
+            content: contentTranslated.replace(/\n/g, '<br>'),
+            isAi: true
+          }
+        });
+      } catch (error) {
+        log('API', 'ERROR', `翻译文章失败: ${error.message}`);
+        res.status(500).json({ error: '翻译失败: ' + error.message });
+      }
+    });
+
+    // 人工翻译（管理员）
+    this.app.post('/api/articles/:id/manual-translate', async (req, res) => {
+      try {
+        const articleId = parseInt(req.params.id);
+        const { subjectTranslated, contentHtmlTranslated } = req.body;
+        
+        if (!subjectTranslated || !contentHtmlTranslated) {
+          return res.status(400).json({ error: '请提供翻译内容' });
+        }
+        
+        log('API', 'INFO', `人工翻译文章: ${articleId}`);
+        
+        // 从HTML中提取纯文本
+        const contentTranslated = contentHtmlTranslated
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/p>/gi, '\n')
+          .replace(/<[^>]+>/g, '')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&')
+          .trim();
+        
+        // 保存人工翻译
+        db.updateArticleTranslation(articleId, {
+          subjectTranslated,
+          contentTranslated,
+          contentHtmlTranslated,
+          isAiTranslated: 0, // 标记为人工翻译
+          translatedAt: new Date().toISOString()
+        });
+        
+        log('API', 'SUCCESS', `文章 ${articleId} 人工翻译保存成功`);
+        
+        res.json({ success: true });
+      } catch (error) {
+        log('API', 'ERROR', `保存人工翻译失败: ${error.message}`);
+        res.status(500).json({ error: '保存失败: ' + error.message });
+      }
+    });
+
     // 公开配置 API（无需认证）
     this.app.get('/api/settings/public', (req, res) => {
       try {
@@ -469,18 +604,54 @@ ${jsonString}`;
         const limit = parseInt(req.query.limit) || 20;
         const search = req.query.search || '';
         const author = req.query.author || '';
+        const source = req.query.source || '';
+        const dateFilter = req.query.dateFilter || '';
 
         const allArticles = db.getAllArticles();
         
         // 过滤
         let filtered = allArticles;
+        
+        // 搜索过滤
         if (search) {
           filtered = filtered.filter(a => 
             a.subject.includes(search) || a.content.includes(search)
           );
         }
+        
+        // 作者过滤
         if (author) {
           filtered = filtered.filter(a => a.writer.nick === author);
+        }
+        
+        // 来源过滤
+        if (source) {
+          filtered = filtered.filter(a => a.source === source);
+        }
+        
+        // 时间过滤
+        if (dateFilter) {
+          const now = Date.now();
+          let startTime = 0;
+          
+          switch (dateFilter) {
+            case 'today':
+              startTime = now - 24 * 60 * 60 * 1000;
+              break;
+            case 'week':
+              startTime = now - 7 * 24 * 60 * 60 * 1000;
+              break;
+            case 'month':
+              startTime = now - 30 * 24 * 60 * 60 * 1000;
+              break;
+            case '3months':
+              startTime = now - 90 * 24 * 60 * 60 * 1000;
+              break;
+          }
+          
+          if (startTime > 0) {
+            filtered = filtered.filter(a => a.writeDate >= startTime);
+          }
         }
 
         // 分页
@@ -707,14 +878,43 @@ ${jsonString}`;
         const translatedArticles = db.getTranslatedCount();
         const allArticles = db.getAllArticles();
         
-        // 作者统计
+        // 作者名称映射（合并同一个人的不同账号）
+        const authorNameMap = {
+          '아이네♪': '아이네',
+          '고세구!': '고세구',
+          '징버거!': '징버거',
+          '징버거☆': '징버거',
+          '주르르!': '주르르',
+          '주르르_': '주르르',
+          '릴파!': '릴파',
+          '릴파♬': '릴파',
+          '릴파 LILPA': '릴파',
+          '비챤!': '비챤',
+          '비챤_': '비챤'
+        };
+        
+        // 作者统计（按来源分组）
         const authorStats = {};
         allArticles.forEach(article => {
-          const author = article.writer.nick;
-          if (!authorStats[author]) {
-            authorStats[author] = { count: 0, avatar: article.writer.image };
+          const originalAuthor = article.writer.nick;
+          const normalizedAuthor = authorNameMap[originalAuthor] || originalAuthor;
+          const source = article.source || 'naver';
+          
+          if (!authorStats[normalizedAuthor]) {
+            authorStats[normalizedAuthor] = {
+              avatar: article.writer.image,
+              naver: 0,
+              soop: 0,
+              total: 0
+            };
           }
-          authorStats[author].count++;
+          
+          if (source === 'soop') {
+            authorStats[normalizedAuthor].soop++;
+          } else {
+            authorStats[normalizedAuthor].naver++;
+          }
+          authorStats[normalizedAuthor].total++;
         });
 
         // 最近文章
@@ -823,6 +1023,7 @@ class Application {
   constructor() {
     this.apiServer = null;
     this.scraper = null;
+    this.soopScraper = null;
     this.monitor = null;
   }
 
@@ -835,19 +1036,27 @@ class Application {
 
     try {
       // 1. 启动 API 服务器
-      log('MAIN', 'INFO', '[1/3] 启动 API 服务器...');
+      log('MAIN', 'INFO', '[1/4] 启动 API 服务器...');
       this.apiServer = new APIServer(8080);
       await this.apiServer.start();
       log('MAIN', 'INFO', '');
 
       // 2. 启动 Cafe 爬虫
-      log('MAIN', 'INFO', '[2/3] 启动 Cafe 爬虫...');
+      log('MAIN', 'INFO', '[2/4] 启动 Naver Cafe 爬虫...');
       this.scraper = new CafeScraper();
       await this.scraper.start();
       log('MAIN', 'INFO', '');
 
-      // 3. 启动直播监控
-      log('MAIN', 'INFO', '[3/3] 启动直播监控...');
+      // 3. 启动 SOOP 爬虫
+      log('MAIN', 'INFO', '[3/4] 启动 SOOP 公告板爬虫...');
+      const { SoopScraper } = await import('./src/modules/soop-scraper.js');
+      this.soopScraper = new SoopScraper(getDatabase());
+      await this.soopScraper.init();
+      this.soopScraper.start(config.cafe.interval);
+      log('MAIN', 'INFO', '');
+
+      // 4. 启动直播监控
+      log('MAIN', 'INFO', '[4/4] 启动直播监控...');
       this.monitor = new StreamMonitor();
       await this.monitor.start();
       log('MAIN', 'INFO', '');
@@ -858,7 +1067,8 @@ class Application {
       log('MAIN', 'INFO', '');
       log('MAIN', 'INFO', '📊 服务状态:');
       log('MAIN', 'INFO', `  - API 服务器: http://localhost:8080`);
-      log('MAIN', 'INFO', `  - Cafe 爬虫: 运行中 (间隔: ${config.cafe.interval / 1000 / 60} 分钟)`);
+      log('MAIN', 'INFO', `  - Naver Cafe 爬虫: 运行中 (间隔: ${config.cafe.interval / 1000 / 60} 分钟)`);
+      log('MAIN', 'INFO', `  - SOOP 公告板爬虫: 运行中 (间隔: ${config.cafe.interval / 1000 / 60} 分钟)`);
       log('MAIN', 'INFO', `  - 直播监控: 运行中`);
       log('MAIN', 'INFO', '');
       log('MAIN', 'INFO', '💡 提示:');

@@ -53,15 +53,17 @@ class SQLiteDatabase {
     addArticle(article) {
         const stmt = this.db.prepare(`
             INSERT OR REPLACE INTO articles (
-                article_id, subject, content, content_html,
+                article_id, subject, content, content_html, text_content,
                 write_date, write_date_formatted,
-                subject_translated, content_translated, translated_at,
+                subject_translated, content_translated, content_html_translated, 
+                is_ai_translated, translated_at,
                 author_nick, author_image, author_member_key,
                 author_member_level, author_member_level_name,
                 menu_id, menu_name,
                 read_count, comment_count, like_count,
+                source,
                 fetched_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         try {
@@ -70,10 +72,13 @@ class SQLiteDatabase {
                 article.subject,
                 article.content,
                 article.contentHtml,
+                article.textContent || article.content || '',
                 article.writeDate,
                 article.writeDateFormatted,
                 article.subjectTranslated || null,
                 article.contentTranslated || null,
+                article.contentHtmlTranslated || null,
+                article.isAiTranslated !== undefined ? article.isAiTranslated : 1,
                 article.translatedAt || null,
                 article.writer.nick,
                 article.writer.image,
@@ -85,6 +90,7 @@ class SQLiteDatabase {
                 article.readCount,
                 article.commentCount,
                 article.likeCount,
+                article.source || 'naver',
                 article.fetchedAt
             );
             return true;
@@ -120,23 +126,38 @@ class SQLiteDatabase {
     }
 
     // 更新文章翻译
-    updateArticleTranslation(articleId, subjectTranslated, contentTranslated) {
+    updateArticleTranslation(articleId, translation) {
         const stmt = this.db.prepare(`
             UPDATE articles 
             SET subject_translated = ?, 
                 content_translated = ?, 
+                content_html_translated = ?,
+                is_ai_translated = ?,
                 translated_at = ?
             WHERE article_id = ?
         `);
 
         try {
-            const translatedAt = new Date().toISOString();
-            stmt.run(subjectTranslated, contentTranslated, translatedAt, articleId);
+            stmt.run(
+                translation.subjectTranslated,
+                translation.contentTranslated,
+                translation.contentHtmlTranslated || null,
+                translation.isAiTranslated !== undefined ? translation.isAiTranslated : 1,
+                translation.translatedAt || new Date().toISOString(),
+                articleId
+            );
             return true;
         } catch (error) {
             logger.error('SQLite', `更新文章翻译失败: ${error.message}`);
             return false;
         }
+    }
+
+    // 获取单篇文章
+    getArticle(articleId) {
+        const stmt = this.db.prepare('SELECT * FROM articles WHERE article_id = ?');
+        const row = stmt.get(articleId);
+        return row ? this.rowToArticle(row) : null;
     }
 
     // 获取未翻译的文章
@@ -193,10 +214,13 @@ class SQLiteDatabase {
             subject: row.subject,
             content: row.content,
             contentHtml: row.content_html,
+            textContent: row.text_content,
             writeDate: row.write_date,
             writeDateFormatted: row.write_date_formatted,
             subjectTranslated: row.subject_translated,
             contentTranslated: row.content_translated,
+            contentHtmlTranslated: row.content_html_translated,
+            isAiTranslated: row.is_ai_translated === 1,
             translatedAt: row.translated_at,
             writer: {
                 nick: row.author_nick,
@@ -212,6 +236,7 @@ class SQLiteDatabase {
             readCount: row.read_count,
             commentCount: row.comment_count,
             likeCount: row.like_count,
+            source: row.source || 'naver',
             fetchedAt: row.fetched_at
         };
     }

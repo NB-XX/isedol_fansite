@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import axios from 'axios';
 import Database from '../src/database/sqlite.js';
-import logger from '../src/utils/logger.js';
+import { logger } from '../src/utils/logger.js';
 
 dotenv.config();
 
@@ -32,6 +32,8 @@ async function fetchArticleList(page) {
       }
     });
 
+    console.log('API 返回数据:', response.data);
+
     return response.data;
   } catch (error) {
     logger.error(`获取第 ${page} 页文章列表失败:`, error.message);
@@ -40,11 +42,14 @@ async function fetchArticleList(page) {
 }
 
 async function fetchArticleDetail(articleId) {
-  const url = `https://apis.naver.com/cafe-web/cafe-articleapi/v2/cafes/${CAFE_ID}/articles/${articleId}`;
+  const url = `https://article.cafe.naver.com/gw/v4/cafes/${CAFE_ID}/articles/${articleId}`;
   
   try {
     const response = await axios.get(url, {
       params: {
+        query: '',
+        menuId: MENU_ID,
+        boardType: 'L',
         useCafeId: true,
         requestFrom: 'A'
       },
@@ -54,7 +59,9 @@ async function fetchArticleDetail(articleId) {
       }
     });
 
-    return response.data.result;
+    console.log('文章详情 API 返回数据:', response.data);
+
+    return response.data;
   } catch (error) {
     logger.error(`获取文章 ${articleId} 详情失败:`, error.message);
     return null;

@@ -166,7 +166,15 @@ cd ..
 
 ### 3. 配置环境变量
 
-创建 `.env` 文件（参考 `.env.example`）：
+**重要：请勿将 `.env` 文件提交到 Git！**
+
+复制 `.env.example` 并重命名为 `.env`，然后填入你的配置：
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env` 文件，填入你的配置：
 
 ```env
 # Naver Cafe 配置
@@ -179,9 +187,26 @@ USE_PROXY=true
 PROXY_URL=http://127.0.0.1:7890
 
 # Firebase 配置（直播监控）
-FIREBASE_API_KEY=your_api_key
-FIREBASE_DATABASE_URL=your_database_url
+FIREBASE_API_KEY=your_firebase_api_key
+FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+FIREBASE_PROJECT_ID=your_project_id
+FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+FIREBASE_APP_ID=your_app_id
+FIREBASE_DATABASE_URL=https://your_project.firebasedatabase.app/
+
+# 管理员密码
+ADMIN_PASSWORD=your_secure_password
+
+# AI 翻译配置（可选）
+TRANSLATION_ENABLED=false
+TRANSLATION_API_KEY=your_api_key
 ```
+
+⚠️ **安全提示**：
+- `.env` 文件已在 `.gitignore` 中，不会被提交到 Git
+- 请妥善保管你的 API 密钥和密码
+- 不要在代码中硬编码敏感信息
 
 ### 4. 启动服务
 

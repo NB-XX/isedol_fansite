@@ -136,12 +136,24 @@
           </h3>
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div v-for="(stat, author) in stats.authorStats" :key="author" 
-                 class="bg-white/50 rounded-xl p-4 flex items-center justify-between hover:bg-white transition-colors border border-gray-100">
-              <div class="flex items-center space-x-3">
+                 class="bg-white/50 rounded-xl p-4 hover:bg-white transition-colors border border-gray-100">
+              <div class="flex items-center space-x-3 mb-3">
                 <img :src="stat.avatar" class="w-10 h-10 rounded-full shadow-sm" />
                 <span class="font-medium text-gray-800">{{ author }}</span>
               </div>
-              <span class="px-3 py-1 bg-gray-100 rounded-full text-sm text-gray-600 font-medium">{{ stat.count }} 篇</span>
+              <div class="flex items-center justify-between text-sm">
+                <div class="flex items-center space-x-2">
+                  <span class="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium border border-emerald-200">
+                    Naver: {{ stat.naver }}
+                  </span>
+                  <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium border border-blue-200">
+                    SOOP: {{ stat.soop }}
+                  </span>
+                </div>
+                <span class="px-3 py-1 bg-gray-100 rounded-full text-gray-600 font-bold">
+                  {{ stat.total }} 篇
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -151,7 +163,7 @@
       <div v-if="activeTab === 'articles'" class="space-y-6">
         <!-- 搜索和筛选 -->
         <div class="card p-6">
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
             <input
               v-model="searchQuery"
               type="text"
@@ -168,6 +180,26 @@
               <option v-for="(stat, author) in stats.authorStats" :key="author" :value="author">
                 {{ author }}
               </option>
+            </select>
+            <select
+              v-model="sourceFilter"
+              class="px-4 py-2 bg-white/50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+              @change="loadArticles"
+            >
+              <option value="">全部来源</option>
+              <option value="naver">Naver Cafe</option>
+              <option value="soop">SOOP 公告栏</option>
+            </select>
+            <select
+              v-model="dateFilter"
+              class="px-4 py-2 bg-white/50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+              @change="loadArticles"
+            >
+              <option value="">全部时间</option>
+              <option value="today">今天</option>
+              <option value="week">最近一周</option>
+              <option value="month">最近一月</option>
+              <option value="3months">最近三月</option>
             </select>
             <button
               @click="loadArticles"
@@ -224,6 +256,7 @@
                   <th class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ID</th>
                   <th class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">标题</th>
                   <th class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">作者</th>
+                  <th class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">来源</th>
                   <th class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">发布时间</th>
                   <th class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">翻译状态</th>
                   <th class="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">操作</th>
@@ -251,15 +284,32 @@
                       <span class="text-sm text-gray-700">{{ article.writer.nick }}</span>
                     </div>
                   </td>
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <span
+                      :class="[
+                        'px-2 py-1 text-xs font-semibold rounded-full',
+                        article.source === 'soop' 
+                          ? 'bg-blue-100 text-blue-700 border border-blue-200' 
+                          : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                      ]"
+                    >
+                      {{ article.source === 'soop' ? 'SOOP' : 'Naver' }}
+                    </span>
+                  </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {{ formatDate(article.writeDate) }}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
                     <span
                       v-if="article.subjectTranslated"
-                      class="px-2 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200"
+                      :class="[
+                        'px-2 py-1 text-xs font-semibold rounded-full inline-flex items-center',
+                        article.isAiTranslated 
+                          ? 'bg-purple-100 text-purple-700 border border-purple-200' 
+                          : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                      ]"
                     >
-                      已翻译
+                      {{ article.isAiTranslated ? 'AI翻译' : '人工翻译' }}
                     </span>
                     <span
                       v-else
@@ -274,6 +324,12 @@
                       class="text-blue-600 hover:text-blue-800 font-medium"
                     >
                       查看
+                    </button>
+                    <button
+                      @click="openTranslateModal(article)"
+                      class="text-purple-600 hover:text-purple-800 font-medium"
+                    >
+                      人工翻译
                     </button>
                     <button
                       @click="deleteArticle(article.articleId)"
@@ -388,6 +444,90 @@
         </div>
       </div>
     </div>
+
+    <!-- 人工翻译模态框 -->
+    <div v-if="translateModal.show" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+      <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <!-- 模态框头部 -->
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-purple-50 to-pink-50">
+          <div>
+            <h3 class="text-xl font-bold text-gray-900">人工翻译</h3>
+            <p class="text-sm text-gray-500 mt-1">编辑翻译内容（支持HTML格式）</p>
+          </div>
+          <button
+            @click="closeTranslateModal"
+            class="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- 模态框内容 -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+          <!-- 原文信息 -->
+          <div class="bg-gray-50 rounded-xl p-4 border border-gray-200">
+            <h4 class="text-sm font-semibold text-gray-700 mb-2">原文标题</h4>
+            <p class="text-gray-900">{{ translateModal.article?.subject }}</p>
+          </div>
+
+          <!-- 翻译标题 -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">翻译标题</label>
+            <input
+              v-model="translateModal.subjectTranslated"
+              type="text"
+              class="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all"
+              placeholder="输入翻译后的标题"
+            />
+          </div>
+
+          <!-- 原文内容预览 -->
+          <div class="bg-gray-50 rounded-xl p-4 border border-gray-200">
+            <h4 class="text-sm font-semibold text-gray-700 mb-2">原文内容（HTML）</h4>
+            <div class="max-h-40 overflow-y-auto">
+              <pre class="text-xs text-gray-600 whitespace-pre-wrap font-mono">{{ translateModal.article?.contentHtml || translateModal.article?.content }}</pre>
+            </div>
+          </div>
+
+          <!-- 翻译内容（HTML编辑器） -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">翻译内容（HTML格式）</label>
+            <textarea
+              v-model="translateModal.contentHtmlTranslated"
+              rows="12"
+              class="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all font-mono text-sm"
+              placeholder="输入翻译后的HTML内容..."
+            ></textarea>
+            <p class="mt-2 text-xs text-gray-500">提示：可以直接编辑HTML标签，保留图片和格式</p>
+          </div>
+
+          <!-- 预览 -->
+          <div v-if="translateModal.contentHtmlTranslated" class="bg-blue-50 rounded-xl p-4 border border-blue-200">
+            <h4 class="text-sm font-semibold text-blue-700 mb-2">翻译预览</h4>
+            <div class="prose prose-sm max-w-none" v-html="translateModal.contentHtmlTranslated"></div>
+          </div>
+        </div>
+
+        <!-- 模态框底部 -->
+        <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+          <button
+            @click="closeTranslateModal"
+            class="px-6 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-100 transition-colors"
+          >
+            取消
+          </button>
+          <button
+            @click="saveManualTranslation"
+            :disabled="!translateModal.subjectTranslated || !translateModal.contentHtmlTranslated"
+            class="px-6 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl hover:from-purple-600 hover:to-pink-600 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            保存翻译
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -410,6 +550,14 @@ const selectedArticles = ref([]);
 const selectedArticle = ref(null);
 const searchQuery = ref('');
 const authorFilter = ref('');
+const sourceFilter = ref('');
+const dateFilter = ref('');
+const translateModal = ref({
+  show: false,
+  article: null,
+  subjectTranslated: '',
+  contentHtmlTranslated: ''
+});
 const pagination = ref({
   page: 1,
   limit: 20,
@@ -487,7 +635,9 @@ async function loadArticles() {
         page: pagination.value.page,
         limit: pagination.value.limit,
         search: searchQuery.value,
-        author: authorFilter.value
+        author: authorFilter.value,
+        source: sourceFilter.value,
+        dateFilter: dateFilter.value
       },
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -633,6 +783,43 @@ async function batchTranslate() {
 
 function viewArticle(article) {
   selectedArticle.value = article;
+}
+
+function openTranslateModal(article) {
+  translateModal.value = {
+    show: true,
+    article: article,
+    subjectTranslated: article.subjectTranslated || '',
+    contentHtmlTranslated: article.contentHtmlTranslated || article.contentHtml || article.content?.replace(/\n/g, '<br>') || ''
+  };
+}
+
+function closeTranslateModal() {
+  translateModal.value = {
+    show: false,
+    article: null,
+    subjectTranslated: '',
+    contentHtmlTranslated: ''
+  };
+}
+
+async function saveManualTranslation() {
+  try {
+    const articleId = translateModal.value.article.articleId;
+    
+    showNotification('正在保存翻译...', 'info');
+    
+    await axios.post(`http://localhost:8080/api/articles/${articleId}/manual-translate`, {
+      subjectTranslated: translateModal.value.subjectTranslated,
+      contentHtmlTranslated: translateModal.value.contentHtmlTranslated
+    });
+    
+    showNotification('人工翻译保存成功！', 'success');
+    closeTranslateModal();
+    loadArticles(); // 重新加载文章列表
+  } catch (error) {
+    showNotification('保存翻译失败: ' + (error.response?.data?.error || error.message), 'error');
+  }
 }
 
 function prevPage() {
