@@ -41,7 +41,12 @@
         <h2 class="text-xl sm:text-2xl font-bold mb-4 sm:mb-6 text-gray-800 flex items-center">
           直播状态
         </h2>
-        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-4 sm:gap-6 md:gap-8">
+        
+        <!-- Streamers Skeleton -->
+        <SkeletonLoader v-if="loading" type="streamers" />
+        
+        <!-- Streamers Grid -->
+        <div v-else class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-4 sm:gap-6 md:gap-8">
           <div
             v-for="streamer in streamers"
             :key="streamer.id"
@@ -75,8 +80,42 @@
 
       <!-- Articles Section -->
       <section>
-        <div class="flex items-center justify-between mb-6">
-          <h2 class="text-2xl font-bold text-gray-800">通知帖文</h2>
+        <!-- 搜索栏 -->
+        <div class="mb-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class="text-2xl font-bold text-gray-800">通知帖文</h2>
+          </div>
+
+          <!-- 搜索框 -->
+          <div class="glass p-4 rounded-2xl">
+            <div class="relative">
+              <input
+                v-model="searchQuery"
+                type="text"
+                placeholder="搜索文章标题或内容..."
+                class="w-full px-4 py-3 pl-12 bg-white/50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all"
+                @input="handleSearch"
+              />
+              <svg class="w-5 h-5 absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <button
+                v-if="searchQuery"
+                @click="clearSearch"
+                class="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <!-- 显示搜索结果数量 -->
+            <div v-if="searchQuery" class="mt-3 flex items-center px-4 py-2 bg-blue-100 text-blue-700 rounded-xl text-sm">
+              找到 {{ filteredArticles.length }} 篇文章
+            </div>
+          </div>
+
           <!-- Author Filter Badge -->
           <div v-if="selectedAuthor" class="flex items-center space-x-2">
             <span class="text-sm text-gray-600">筛选:</span>
@@ -93,9 +132,7 @@
         </div>
         
         <!-- Loading State -->
-        <div v-if="loading" class="flex justify-center items-center py-20">
-          <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-        </div>
+        <SkeletonLoader v-if="loading" type="articles" :count="5" />
 
         <!-- Articles Grid -->
         <div v-else class="space-y-6">
@@ -117,7 +154,7 @@
                 >
                   <img
                     v-if="article.writer.image"
-                    :src="article.writer.image"
+                    v-lazy="article.writer.image"
                     :alt="article.writer.nick"
                     class="w-full h-full object-cover"
                     @error="handleImageError"
@@ -156,29 +193,32 @@
                   </p>
                 </div>
 
-                <!-- Translate Button -->
-                <button
-                  @click.stop="toggleFlip(article)"
-                  :class="[
-                    'p-2 transition-colors rounded-full relative',
-                    isFlipped(article.articleId) 
-                      ? 'text-blue-600 bg-blue-100 hover:bg-blue-200' 
-                      : 'text-gray-400 hover:text-blue-500 hover:bg-blue-50'
-                  ]"
-                  :title="isFlipped(article.articleId) ? '显示原文' : '显示翻译'"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-                  </svg>
-                  <!-- AI标识 -->
-                  <span 
-                    v-if="isFlipped(article.articleId) && article.isAiTranslated"
-                    class="absolute -top-1 -right-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold shadow-sm"
-                    title="AI翻译"
+                <!-- Action Buttons -->
+                <div class="flex items-center space-x-1">
+                  <!-- Translate Button -->
+                  <button
+                    @click.stop="toggleFlip(article)"
+                    :class="[
+                      'p-2 transition-colors rounded-full relative',
+                      isFlipped(article.articleId) 
+                        ? 'text-blue-600 bg-blue-100 hover:bg-blue-200' 
+                        : 'text-gray-400 hover:text-blue-500 hover:bg-blue-50'
+                    ]"
+                    :title="isFlipped(article.articleId) ? '显示原文' : '显示翻译'"
                   >
-                    AI
-                  </span>
-                </button>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                    </svg>
+                    <!-- AI标识 -->
+                    <span 
+                      v-if="isFlipped(article.articleId) && article.isAiTranslated"
+                      class="absolute -top-1 -right-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold shadow-sm"
+                      title="AI翻译"
+                    >
+                      AI
+                    </span>
+                  </button>
+                </div>
               </div>
 
               <!-- Article Title -->
@@ -338,6 +378,7 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import StreamerModal from '../components/StreamerModal.vue'
+import SkeletonLoader from '../components/SkeletonLoader.vue'
 import { fetchArticles, fetchStreamers } from '../api'
 
 dayjs.extend(relativeTime)
@@ -353,6 +394,9 @@ const selectedAuthor = ref(null)
 const lastUpdateTime = ref(null)
 const nextCursor = ref(null)
 const hasMore = ref(true)
+
+// 搜索
+const searchQuery = ref('')
 
 // Flip & Translation State
 const flippedArticles = ref(new Set())
@@ -400,15 +444,28 @@ const needsCollapse = (articleId) => {
 
 // Computed
 const filteredArticles = computed(() => {
-  if (!selectedAuthor.value) {
-    return articles.value
-  }
-  // 使用规范化的名称进行筛选
-  return articles.value.filter(article => {
-    const normalizedArticleAuthor = normalizeAuthorName(article.writer.nick)
+  let result = articles.value
+
+  // 作者筛选
+  if (selectedAuthor.value) {
     const normalizedSelectedAuthor = normalizeAuthorName(selectedAuthor.value)
-    return normalizedArticleAuthor === normalizedSelectedAuthor
-  })
+    result = result.filter(article => {
+      const normalizedArticleAuthor = normalizeAuthorName(article.writer.nick)
+      return normalizedArticleAuthor === normalizedSelectedAuthor
+    })
+  }
+
+  // 搜索筛选
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase()
+    result = result.filter(article => 
+      article.subject.toLowerCase().includes(query) ||
+      article.content.toLowerCase().includes(query) ||
+      article.writer.nick.toLowerCase().includes(query)
+    )
+  }
+
+  return result
 })
 
 // Watch filteredArticles changes to re-check heights
@@ -525,7 +582,10 @@ const loadArticles = async (append = false) => {
     
     // 使用 API 返回的最后更新时间
     if (data.lastUpdate) {
-      lastUpdateTime.value = new Date(data.lastUpdate).getTime()
+      // 如果是数字，直接使用；如果是字符串，转换为时间戳
+      lastUpdateTime.value = typeof data.lastUpdate === 'number' 
+        ? data.lastUpdate 
+        : new Date(data.lastUpdate).getTime()
     } else {
       lastUpdateTime.value = Date.now()
     }
@@ -555,6 +615,23 @@ const toggleAuthorFilter = (authorNick) => {
 
 const clearAuthorFilter = () => {
   selectedAuthor.value = null
+}
+
+// 搜索
+const handleSearch = () => {
+  // 搜索时重新检测文章高度
+  nextTick(() => {
+    setTimeout(() => {
+      filteredArticles.value.forEach(article => {
+        checkContentHeight(article.articleId)
+      })
+    }, 100)
+  })
+}
+
+const clearSearch = () => {
+  searchQuery.value = ''
+  handleSearch()
 }
 
 const loadStreamers = async () => {

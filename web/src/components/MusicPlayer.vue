@@ -8,8 +8,7 @@
     >
       <div class="p-3 md:p-4 border-b border-white/30 flex items-center justify-between">
         <div class="flex items-center space-x-2">
-          <span class="text-lg md:text-xl">🎵</span>
-          <span class="text-sm md:text-base font-medium text-gray-700">音乐播放器</span>
+          <span class="text-sm md:text-base font-medium text-gray-700">ByMyLight 专辑试听</span>
         </div>
         <button
           @click="togglePlayer"

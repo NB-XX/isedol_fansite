@@ -2,6 +2,7 @@
 // start-all.js - 统一启动所有服务
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { config } from './src/config/index.js';
@@ -91,7 +92,58 @@ class APIServer {
   }
 
   setupMiddleware() {
-    this.app.use(cors());
+    // CORS 配置
+    const allowedOrigins = process.env.ALLOWED_ORIGINS 
+      ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+      : ['http://localhost:5173', 'http://localhost:3000'];
+    
+    this.app.use((req, res, next) => {
+      const origin = req.headers.origin;
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+        res.setHeader('Access-Control-Allow-Origin', origin || '*');
+      }
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      
+      // 处理预检请求
+      if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+      }
+      next();
+    });
+    
+    // API 限流
+    const apiLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000, // 15分钟
+      max: 100, // 最多100个请求
+      message: { error: '请求过于频繁，请稍后再试' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+
+    const translateLimiter = rateLimit({
+      windowMs: 60 * 60 * 1000, // 1小时
+      max: 20, // 最多20个翻译请求
+      message: { error: '翻译请求过多，请稍后再试' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+
+    const searchLimiter = rateLimit({
+      windowMs: 1 * 60 * 1000, // 1分钟
+      max: 30, // 最多30个搜索请求
+      message: { error: '搜索请求过多，请稍后再试' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+
+    // 应用限流
+    this.app.use('/api/', apiLimiter);
+    this.app.use('/api/articles/:id/translate', translateLimiter);
+    this.app.use('/api/articles/:id/manual-translate', translateLimiter);
+    this.app.use('/api/articles/search', searchLimiter);
+    
     this.app.use(express.json());
     
     // 请求日志
@@ -199,11 +251,57 @@ class APIServer {
         if (!article) {
           return res.status(404).json({ error: '文章不存在' });
         }
-
+        
         res.json({ article });
       } catch (error) {
         log('API', 'ERROR', `获取文章失败: ${error.message}`);
         res.status(500).json({ error: '获取文章失败' });
+      }
+    });
+
+    // 搜索文章
+    this.app.get('/api/articles/search', (req, res) => {
+      try {
+        const { q, time, source } = req.query;
+        let articles = db.getAllArticles();
+
+        // 关键词搜索
+        if (q) {
+          const query = q.toLowerCase();
+          articles = articles.filter(article =>
+            article.subject.toLowerCase().includes(query) ||
+            article.content.toLowerCase().includes(query) ||
+            article.writer.nick.toLowerCase().includes(query)
+          );
+        }
+
+        // 时间筛选
+        if (time) {
+          const now = Date.now();
+          const filters = {
+            'today': 24 * 60 * 60 * 1000,
+            'week': 7 * 24 * 60 * 60 * 1000,
+            'month': 30 * 24 * 60 * 60 * 1000,
+            '3months': 90 * 24 * 60 * 60 * 1000
+          };
+          const timeLimit = filters[time];
+          if (timeLimit) {
+            articles = articles.filter(article => (now - article.writeDate) <= timeLimit);
+          }
+        }
+
+        // 来源筛选
+        if (source) {
+          articles = articles.filter(article => article.source === source);
+        }
+
+        res.json({ 
+          articles: articles.slice(0, 100), // 最多返回100条
+          total: articles.length
+        });
+      } catch (error) {
+        log('API', 'ERROR', `搜索文章失败: ${error.message}`);
+        res.status(500).json({ error: '搜索失败' });
       }
     });
 

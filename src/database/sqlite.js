@@ -120,9 +120,31 @@ class SQLiteDatabase {
     }
 
     getLastUpdate() {
-        const stmt = this.db.prepare('SELECT MAX(fetched_at) as last_update FROM articles');
-        const result = stmt.get();
-        return result.last_update;
+        // 获取文章表的最后更新时间
+        const articlesStmt = this.db.prepare('SELECT MAX(fetched_at) as last_update FROM articles');
+        const articlesResult = articlesStmt.get();
+        
+        // 获取直播状态表的最后更新时间
+        const streamStmt = this.db.prepare('SELECT MAX(updated_at) as last_update FROM stream_status');
+        const streamResult = streamStmt.get();
+        
+        // 获取直播历史表的最后更新时间
+        const historyStmt = this.db.prepare('SELECT MAX(timestamp) as last_update FROM stream_history');
+        const historyResult = historyStmt.get();
+        
+        // 返回最新的时间
+        const times = [
+            articlesResult.last_update,
+            streamResult.last_update,
+            historyResult.last_update
+        ].filter(t => t != null);
+        
+        if (times.length === 0) {
+            return null;
+        }
+        
+        // 返回最新的时间戳
+        return Math.max(...times.map(t => new Date(t).getTime()));
     }
 
     // 更新文章翻译
