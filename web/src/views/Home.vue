@@ -239,7 +239,7 @@
                 <!-- 原文内容 -->
                 <div class="relative">
                   <div
-                    class="article-content cafe-content text-gray-700 leading-relaxed mb-4 overflow-hidden transition-all duration-300"
+                    class="article-content cafe-content text-gray-700 text-base leading-relaxed mb-4 overflow-hidden transition-all duration-300"
                     :class="!isExpanded(article.articleId) && needsCollapse(article.articleId) ? 'max-h-[400px]' : ''"
                     v-html="article.contentHtml || article.content"
                   ></div>
@@ -283,13 +283,13 @@
                 </div>
                 <div v-else class="relative">
                   <div 
-                    class="article-content cafe-content text-gray-700 leading-relaxed mb-4 overflow-hidden transition-all duration-300"
+                    class="article-content cafe-content text-gray-700 text-base leading-relaxed mb-4 overflow-hidden transition-all duration-300"
                     :class="!isExpanded(article.articleId) && needsCollapse(article.articleId) ? 'max-h-[400px]' : ''"
                   >
                     <!-- 翻译后的HTML内容（保留图片和格式） -->
                     <div v-if="article.contentHtmlTranslated" v-html="article.contentHtmlTranslated"></div>
                     <!-- 如果没有HTML翻译，显示纯文本翻译 -->
-                    <div v-else-if="article.contentTranslated" class="whitespace-pre-wrap">{{ article.contentTranslated }}</div>
+                    <div v-else-if="article.contentTranslated" class="whitespace-pre-wrap text-base">{{ article.contentTranslated }}</div>
                     <!-- 都没有则显示原文 -->
                     <div v-else v-html="article.contentHtml || article.content"></div>
                   </div>
@@ -380,6 +380,7 @@ import relativeTime from 'dayjs/plugin/relativeTime'
 import StreamerModal from '../components/StreamerModal.vue'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
 import { fetchArticles, fetchStreamers } from '../api'
+import { buildApiUrl, API_ENDPOINTS } from '../config/api.js'
 
 dayjs.extend(relativeTime)
 dayjs.locale('zh-cn')
@@ -405,6 +406,9 @@ const loadingTranslation = ref({})
 // Expanded articles state
 const expandedArticles = ref(new Set())
 const collapsibleArticles = ref(new Set())
+
+// Image zoom state
+const zoomedImages = ref(new Set())
 
 // 作者名称映射（合并同一个人的不同账号）
 const authorNameMap = {
@@ -477,6 +481,8 @@ watch(filteredArticles, () => {
       filteredArticles.value.forEach(article => {
         checkContentHeight(article.articleId)
       })
+      // 设置图片处理器
+      setupImageHandlers()
     }, 100)
   })
 }, { immediate: false })
@@ -494,6 +500,57 @@ const toggleExpand = (articleId) => {
   } else {
     expandedArticles.value.add(articleId)
   }
+  
+  // 展开/收起后重新初始化图片处理器
+  setupImageHandlers()
+}
+
+// Handle image click for zoom
+const handleImageClick = (event) => {
+  const img = event.target
+  if (img.tagName === 'IMG') {
+    const imgId = img.src
+    if (zoomedImages.value.has(imgId)) {
+      zoomedImages.value.delete(imgId)
+      img.classList.remove('zoomed')
+    } else {
+      zoomedImages.value.add(imgId)
+      img.classList.add('zoomed')
+      // 滚动到图片位置
+      img.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }
+}
+
+// Setup image click handlers after content is loaded
+const setupImageHandlers = () => {
+  nextTick(() => {
+    const images = document.querySelectorAll('.article-content img')
+    images.forEach(img => {
+      // 移除旧的事件监听器（如果存在）
+      img.removeEventListener('click', handleImageClick)
+      // 添加新的事件监听器
+      img.addEventListener('click', handleImageClick)
+      
+      // 检查图片是否需要缩放
+      const checkImageHeight = () => {
+        if (img.naturalHeight > 600) {
+          img.classList.add('tall-image')
+          img.title = '点击查看原图'
+        } else {
+          img.classList.remove('tall-image')
+          img.title = ''
+        }
+      }
+      
+      img.onload = checkImageHeight
+      
+      // 如果图片已经加载，立即检查
+      if (img.complete) {
+        checkImageHeight()
+      }
+    })
+  })
 }
 
 // Methods
@@ -510,6 +567,9 @@ const toggleFlip = async (article) => {
         await requestTranslation(article)
     }
   }
+  
+  // 切换后重新初始化图片处理器
+  setupImageHandlers()
 }
 
 const requestTranslation = async (article) => {
@@ -519,7 +579,7 @@ const requestTranslation = async (article) => {
     try {
         console.log('Requesting translation for', id)
         
-        const response = await fetch(`http://localhost:8080/api/articles/${id}/translate`, {
+        const response = await fetch(buildApiUrl(API_ENDPOINTS.articleTranslate(id)), {
             method: 'POST'
         })
         
@@ -533,6 +593,9 @@ const requestTranslation = async (article) => {
             if (data.translation.content) {
                 article.contentHtmlTranslated = data.translation.content
             }
+            
+            // 翻译完成后设置图片处理器
+            setupImageHandlers()
         }
         
     } catch (e) {
@@ -567,7 +630,7 @@ const loadArticles = async (append = false) => {
       params.append('cursor', nextCursor.value)
     }
     
-    const response = await fetch(`http://localhost:8080/api/articles?${params}`)
+    const response = await fetch(buildApiUrl(`${API_ENDPOINTS.articles}?${params}`))
     const data = await response.json()
     
     if (append) {
@@ -595,6 +658,8 @@ const loadArticles = async (append = false) => {
       data.articles.forEach(article => {
         checkContentHeight(article.articleId)
       })
+      // 设置图片处理器
+      setupImageHandlers()
     })
   } catch (error) {
     console.error('加载文章失败:', error)
@@ -625,6 +690,8 @@ const handleSearch = () => {
       filteredArticles.value.forEach(article => {
         checkContentHeight(article.articleId)
       })
+      // 设置图片处理器
+      setupImageHandlers()
     }, 100)
   })
 }

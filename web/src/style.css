@@ -70,7 +70,8 @@
 /* Naver Cafe 内容样式 - 基础样式 */
 .cafe-content {
   @apply prose prose-sm max-w-none;
-  line-height: 1.6;
+  line-height: 1.8;
+  font-size: 16px;
 }
 
 /* Naver Smart Editor 样式 */
@@ -88,14 +89,67 @@
   margin-bottom: 20px;
 }
 
-/* 图片样式 */
+/* 图片样式 - 强制居中 */
 .se-component-content img,
 .se-image-resource,
 .cafe-content img {
   max-width: 100%;
   height: auto;
   border-radius: 8px;
-  margin: 10px 0;
+  margin: 10px auto !important;
+  display: block !important;
+  text-align: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+/* 高度超过阈值的图片自动缩放 */
+.cafe-content img.tall-image {
+  max-height: 600px;
+  object-fit: contain;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  cursor: zoom-in;
+  position: relative;
+}
+
+/* 点击后放大显示原始大小 */
+.cafe-content img.tall-image.zoomed {
+  max-height: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  cursor: zoom-out;
+  animation: zoomIn 0.3s ease;
+}
+
+@keyframes zoomIn {
+  from {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* 未缩放的图片悬停效果 */
+.cafe-content img.tall-image:not(.zoomed):hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: scale(1.02);
+}
+
+/* 已缩放的图片悬停效果 */
+.cafe-content img.tall-image.zoomed:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+/* 图片容器也居中 */
+.se-section-image,
+.se-component-content,
+.cafe-content p:has(img),
+.cafe-content div:has(img) {
+  text-align: center !important;
+  display: block;
+  width: 100%;
 }
 
 .se-section-image {
@@ -111,6 +165,7 @@
 .se-text-paragraph {
   margin: 8px 0;
   line-height: 1.8;
+  font-size: 16px;
 }
 
 .se-text-paragraph-align-center {
@@ -139,6 +194,8 @@
 /* 段落样式 */
 .cafe-content p {
   @apply mb-3 text-gray-700;
+  font-size: 16px;
+  line-height: 1.8;
 }
 
 /* 标题样式 */

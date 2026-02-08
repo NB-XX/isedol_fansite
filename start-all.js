@@ -3,6 +3,7 @@
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { config } from './src/config/index.js';
@@ -92,16 +93,11 @@ class APIServer {
   }
 
   setupMiddleware() {
-    // CORS 配置
-    const allowedOrigins = process.env.ALLOWED_ORIGINS 
-      ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-      : ['http://localhost:5173', 'http://localhost:3000'];
-    
+    // CORS 配置 - 允许所有来源（开发环境）
     this.app.use((req, res, next) => {
       const origin = req.headers.origin;
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
-        res.setHeader('Access-Control-Allow-Origin', origin || '*');
-      }
+      // 开发环境允许所有来源
+      res.setHeader('Access-Control-Allow-Origin', origin || '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -410,6 +406,9 @@ class APIServer {
     });
 
     // 翻译 JSON API（一次性翻译整个 JSON 对象）
+    // 添加缓存机制，避免重复翻译相同内容
+    const translationCache = new Map(); // 内存缓存
+    
     this.app.post('/api/translate-json', async (req, res) => {
       try {
         const { data } = req.body;
@@ -418,7 +417,20 @@ class APIServer {
           return res.status(400).json({ error: '请提供要翻译的数据' });
         }
         
-        log('API', 'INFO', `JSON 翻译请求`);
+        // 生成缓存键（使用 JSON 字符串的哈希）
+        const jsonString = JSON.stringify(data, null, 2);
+        const cacheKey = crypto.createHash('md5').update(jsonString).digest('hex');
+        
+        // 检查缓存
+        if (translationCache.has(cacheKey)) {
+          log('API', 'INFO', `使用缓存的翻译结果 (key: ${cacheKey.substring(0, 8)}...)`);
+          return res.json({ 
+            translated: translationCache.get(cacheKey),
+            cached: true 
+          });
+        }
+        
+        log('API', 'INFO', `JSON 翻译请求 (key: ${cacheKey.substring(0, 8)}...)`);
         
         // 导入翻译模块
         const { Translator } = await import('./src/modules/translator.js');
@@ -427,9 +439,6 @@ class APIServer {
         if (!translator.isEnabled) {
           return res.status(503).json({ error: '翻译功能未启用' });
         }
-        
-        // 将 JSON 转换为字符串，让模型翻译
-        const jsonString = JSON.stringify(data, null, 2);
         
         // 构建特殊的 prompt
         const prompt = `请将以下 JSON 数据中的所有韩语文本翻译成简体中文，保持 JSON 结构不变，只翻译文本内容。请直接返回翻译后的 JSON，不要添加任何解释。
@@ -461,13 +470,24 @@ ${jsonString}`;
           
           translated = JSON.parse(jsonText);
           log('API', 'SUCCESS', `JSON 翻译完成`);
+          
+          // 存入缓存
+          translationCache.set(cacheKey, translated);
+          log('API', 'INFO', `翻译结果已缓存 (缓存大小: ${translationCache.size})`);
+          
+          // 限制缓存大小，最多保存 100 个翻译结果
+          if (translationCache.size > 100) {
+            const firstKey = translationCache.keys().next().value;
+            translationCache.delete(firstKey);
+            log('API', 'INFO', `缓存已满，删除最旧的条目`);
+          }
         } catch (parseError) {
           log('API', 'ERROR', `JSON 解析失败: ${parseError.message}`);
           log('API', 'ERROR', `翻译结果前 500 字符: ${translatedText.substring(0, 500)}...`);
           throw new Error('翻译结果解析失败');
         }
         
-        res.json({ translated });
+        res.json({ translated, cached: false });
       } catch (error) {
         log('API', 'ERROR', `JSON 翻译失败: ${error.message}`);
         res.status(500).json({ error: 'JSON 翻译失败: ' + error.message });

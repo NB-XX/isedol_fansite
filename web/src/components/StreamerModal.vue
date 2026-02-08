@@ -244,6 +244,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import dayjs from 'dayjs'
 import duration from 'dayjs/plugin/duration'
+import { buildApiUrl, API_ENDPOINTS } from '../config/api.js'
 
 dayjs.extend(duration)
 
@@ -265,6 +266,25 @@ const loadingTranslation = ref(false)
 const liveDuration = ref('计算中...')
 let durationInterval = null
 
+// 缓存机制：存储原始数据和翻译结果
+const summaryCache = ref({
+  originalHash: null,  // 原始数据的哈希值
+  original: null,      // 原始数据
+  translated: null     // 翻译结果
+})
+
+// 生成简单的哈希值
+const generateHash = (obj) => {
+  const str = JSON.stringify(obj)
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32bit integer
+  }
+  return hash.toString()
+}
+
 const toggleAiSummary = () => {
   showAiSummary.value = !showAiSummary.value
   if (showAiSummary.value && !aiSummary.value && !loadingAiSummary.value) {
@@ -280,12 +300,33 @@ const fetchAiSummary = async () => {
   loadingAiSummary.value = true
   aiSummaryError.value = null
   try {
-    const response = await fetch(`http://localhost:8080/api/broad-summary/${props.streamer.broadNo}`)
+    const response = await fetch(buildApiUrl(API_ENDPOINTS.broadSummary(props.streamer.broadNo)))
     if (!response.ok) {
       throw new Error('无法获取直播总结')
     }
     const data = await response.json()
-    aiSummary.value = data
+    
+    // 生成新数据的哈希值
+    const newHash = generateHash(data)
+    
+    // 检查是否与缓存的数据相同
+    if (summaryCache.value.originalHash === newHash && summaryCache.value.original) {
+      console.log('AI 总结内容未变化，使用缓存')
+      aiSummary.value = summaryCache.value.original
+      // 如果有缓存的翻译，也恢复翻译
+      if (summaryCache.value.translated) {
+        translatedSummary.value = summaryCache.value.translated
+      }
+    } else {
+      console.log('AI 总结内容已更新')
+      aiSummary.value = data
+      // 更新缓存的原始数据
+      summaryCache.value.originalHash = newHash
+      summaryCache.value.original = data
+      // 清除旧的翻译（因为内容变了）
+      summaryCache.value.translated = null
+      translatedSummary.value = null
+    }
   } catch (error) {
     console.error('获取 AI 总结失败:', error)
     aiSummaryError.value = error.message || '获取直播总结失败，请稍后重试'
@@ -295,6 +336,7 @@ const fetchAiSummary = async () => {
 }
 
 const refreshAiSummary = () => {
+  // 刷新时不清除缓存，只重新获取
   aiSummary.value = null
   translatedSummary.value = null
   fetchAiSummary()
@@ -302,9 +344,18 @@ const refreshAiSummary = () => {
 
 const translateSummary = async () => {
   if (!aiSummary.value) return
+  
+  // 检查是否有缓存的翻译
+  const currentHash = generateHash(aiSummary.value)
+  if (summaryCache.value.originalHash === currentHash && summaryCache.value.translated) {
+    console.log('使用缓存的翻译结果')
+    translatedSummary.value = summaryCache.value.translated
+    return
+  }
+  
   loadingTranslation.value = true
   try {
-    const response = await fetch('http://localhost:8080/api/translate-json', {
+    const response = await fetch(buildApiUrl(API_ENDPOINTS.translateJson), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -318,6 +369,16 @@ const translateSummary = async () => {
     }
     const result = await response.json()
     translatedSummary.value = result.translated
+    
+    // 缓存翻译结果
+    summaryCache.value.translated = result.translated
+    
+    // 显示是否使用了后端缓存
+    if (result.cached) {
+      console.log('使用了后端缓存的翻译结果')
+    } else {
+      console.log('新翻译已完成并缓存')
+    }
   } catch (error) {
     console.error('翻译失败:', error)
     alert('翻译失败，请稍后重试')

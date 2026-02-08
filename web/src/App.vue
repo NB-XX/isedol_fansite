@@ -20,6 +20,7 @@
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import MusicPlayer from './components/MusicPlayer.vue'
+import { buildApiUrl, API_ENDPOINTS } from './config/api.js'
 
 const config = ref({
   BACKGROUND_IMAGE: '',
@@ -49,7 +50,7 @@ const backgroundStyle = computed(() => {
 
 onMounted(async () => {
   try {
-    const response = await axios.get('http://localhost:8080/api/settings/public')
+    const response = await axios.get(buildApiUrl(API_ENDPOINTS.settingsPublic))
     if (response.data.config) {
       config.value = { ...config.value, ...response.data.config }
     }
