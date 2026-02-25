@@ -3,7 +3,7 @@ import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue } from 'firebase/database';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
-import { StreamDatabase } from '../database/index.js';
+import { StreamDatabase } from '../database/index-simple.js';
 
 export class StreamMonitor {
     constructor() {
@@ -148,10 +148,30 @@ export class StreamMonitor {
                 }
                 
                 console.log(`  时间: ${new Date().toLocaleTimeString()}`);
+                
+                // 记录开播事件到数据库
+                this.db.addStreamEvent({
+                    streamerId,
+                    name,
+                    action: 'start',
+                    title: info.title,
+                    category: info.category,
+                    broadNo
+                });
             }
             // 下播
             else if (!info.online && previous && previous.online) {
                 logger.info('StreamMonitor', `[下播] ${name}`);
+                
+                // 记录下播事件到数据库
+                this.db.addStreamEvent({
+                    streamerId,
+                    name,
+                    action: 'end',
+                    title: previous.title,
+                    category: previous.category,
+                    broadNo: previous.broadNo
+                });
             }
             // 在线时的更新
             else if (info.online && previous && previous.online) {

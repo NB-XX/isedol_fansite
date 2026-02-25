@@ -278,6 +278,7 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
+import { buildApiUrl, API_ENDPOINTS } from '../config/api.js';
 
 const router = useRouter();
 const isAuthenticated = ref(false);
@@ -328,7 +329,7 @@ async function handleLogin() {
   loading.value = true;
 
   try {
-    const response = await axios.post('http://localhost:8080/api/settings/auth', {
+    const response = await axios.post(buildApiUrl(API_ENDPOINTS.settingsAuth), {
       password: password.value
     });
 
@@ -357,7 +358,7 @@ async function loadConfig() {
 
   try {
     const token = sessionStorage.getItem('settings_token');
-    const response = await axios.get('http://localhost:8080/api/settings/config', {
+    const response = await axios.get(buildApiUrl(API_ENDPOINTS.settingsConfig), {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
@@ -404,7 +405,7 @@ async function saveConfig() {
     config.value.MUSIC_PLAYLIST = JSON.stringify(musicPlaylist.value);
     
     const token = sessionStorage.getItem('settings_token');
-    const response = await axios.post('http://localhost:8080/api/settings/config', 
+    const response = await axios.post(buildApiUrl(API_ENDPOINTS.settingsConfig), 
       { config: config.value },
       { headers: { 'Authorization': `Bearer ${token}` } }
     );
@@ -417,7 +418,7 @@ async function saveConfig() {
     // 等待 1 秒后触发服务重启
     setTimeout(async () => {
       try {
-        const restartResponse = await axios.post('http://localhost:8080/api/admin/restart', {}, {
+        const restartResponse = await axios.post(buildApiUrl(API_ENDPOINTS.adminRestart), {}, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         

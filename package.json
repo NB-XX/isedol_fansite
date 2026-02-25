@@ -30,7 +30,15 @@
     "pm2:reload": "pm2 reload isedol-fansite",
     "pm2:delete": "pm2 delete isedol-fansite",
     "pm2:logs": "pm2 logs isedol-fansite",
-    "pm2:monit": "pm2 monit"
+    "pm2:monit": "pm2 monit",
+    "cf:migrate": "node scripts/migrate-to-d1.js",
+    "cf:deploy": "wrangler deploy",
+    "cf:deploy-all": "npm run cf:migrate && wrangler deploy && cd web && npm run build && wrangler pages deploy dist",
+    "cf:tail": "wrangler tail",
+    "cf:d1-query": "wrangler d1 execute isedol-fansite-db",
+    "cf:check": "powershell -ExecutionPolicy Bypass -File scripts/check-environment.ps1",
+    "vps:start": "node vps-server.js",
+    "vps:pm2": "pm2 start vps-server.js --name isedol-vps"
   },
   "keywords": [
     "isedol",
@@ -48,5 +56,8 @@
     "express-rate-limit": "^8.2.1",
     "firebase": "^11.0.0",
     "https-proxy-agent": "^7.0.6"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
   }
 }

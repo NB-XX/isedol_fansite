@@ -4,14 +4,14 @@ import zlib from 'zlib';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
-import { ArticleDatabase } from '../database/index.js';
+import { ArticleDatabase } from '../database/index-simple.js';
 import { Translator } from './translator.js';
 
 export class CafeScraper {
     constructor() {
         this.config = config.cafe;
         this.proxyConfig = config.proxy;
-        this.db = new ArticleDatabase(config.database.articlesFile);
+        this.db = new ArticleDatabase();
         this.translator = new Translator();
         this.isRunning = false;
         
@@ -270,6 +270,7 @@ export class CafeScraper {
                         const translation = await this.translator.translateArticle(article);
                         article.subjectTranslated = translation.subjectTranslated;
                         article.contentTranslated = translation.contentTranslated;
+                        article.isAiTranslated = 1; // 标记为AI翻译
                         article.translatedAt = new Date().toISOString();
                     } catch (error) {
                         logger.error('CafeScraper', `翻译失败: ${error.message}`);

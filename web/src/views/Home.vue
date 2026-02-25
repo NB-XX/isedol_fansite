@@ -34,6 +34,31 @@
       </div>
     </header>
 
+    <!-- 新内容提示横幅 -->
+    <Transition name="slide-down">
+      <div v-if="hasNewContent" class="sticky top-16 z-40 mx-4 sm:mx-6 lg:mx-8 mt-4">
+        <div class="max-w-7xl mx-auto">
+          <div class="glass bg-gradient-to-r from-emerald-500/90 to-cyan-500/90 backdrop-blur-md rounded-2xl shadow-lg p-4 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+              <div class="relative">
+                <div class="absolute w-3 h-3 bg-white rounded-full animate-ping"></div>
+                <div class="relative w-3 h-3 bg-white rounded-full"></div>
+              </div>
+              <span class="text-white font-medium">
+                有 {{ newContentCount }} 条新内容
+              </span>
+            </div>
+            <button
+              @click="refreshContent"
+              class="px-4 py-2 bg-white text-emerald-600 rounded-xl hover:bg-emerald-50 transition-colors font-medium shadow-md"
+            >
+              刷新查看
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- Streamers Section -->
@@ -70,7 +95,7 @@
                 />
               </div>
               <!-- Name -->
-              <p class="mt-2 text-center text-sm sm:text-base font-medium text-gray-800 group-hover:text-primary transition-colors truncate">
+              <p lang="ko" class="mt-2 text-center text-sm sm:text-base font-medium text-gray-800 group-hover:text-primary transition-colors truncate" style="font-family: 'Goseogu', sans-serif; font-size: 2rem;">
                 {{ streamer.name }}
               </p>
             </div>
@@ -154,7 +179,7 @@
                 >
                   <img
                     v-if="article.writer.image"
-                    v-lazy="article.writer.image"
+                    :src="article.writer.image"
                     :alt="article.writer.nick"
                     class="w-full h-full object-cover"
                     @error="handleImageError"
@@ -169,8 +194,10 @@
                   <div class="flex items-center space-x-2">
                     <h3 
                       @click="toggleAuthorFilter(article.writer.nick)"
+                      lang="ko"
                       class="font-bold text-gray-900 cursor-pointer hover:text-primary transition-colors"
                       :title="`点击只看 ${normalizeAuthorName(article.writer.nick)} 的文章`"
+                      style="font-family: 'Goseogu', sans-serif; font-size: 2rem;"
                     >
                       {{ normalizeAuthorName(article.writer.nick) }}
                     </h3>
@@ -229,7 +256,7 @@
               >
                 <h2 class="text-xl font-bold mb-3 text-gray-900 hover:text-primary transition-colors cursor-pointer">
                   <!-- 显示原文或翻译标题 -->
-                  <span v-if="!isFlipped(article.articleId)">{{ article.subject }}</span>
+                  <span v-if="!isFlipped(article.articleId)" lang="ko" style="font-family: 'Goseogu', sans-serif; font-size: 2rem;">{{ article.subject }}</span>
                   <span v-else class="text-blue-700">{{ article.subjectTranslated || article.subject }}</span>
                 </h2>
               </a>
@@ -239,6 +266,7 @@
                 <!-- 原文内容 -->
                 <div class="relative">
                   <div
+                    lang="ko"
                     class="article-content cafe-content text-gray-700 text-base leading-relaxed mb-4 overflow-hidden transition-all duration-300"
                     :class="!isExpanded(article.articleId) && needsCollapse(article.articleId) ? 'max-h-[400px]' : ''"
                     v-html="article.contentHtml || article.content"
@@ -325,24 +353,9 @@
 
               <!-- Article Footer -->
               <div class="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between text-sm">
-                <span class="text-gray-500 truncate max-w-[150px]">
+                <span class="text-gray-500 truncate">
                   {{ article.menu.name }}
                 </span>
-                <div class="flex items-center space-x-4 text-gray-500">
-                  <span class="flex items-center">
-                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                    {{ article.readCount || 0 }}
-                  </span>
-                  <span class="flex items-center">
-                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                    </svg>
-                    {{ article.commentCount || 0 }}
-                  </span>
-                </div>
               </div>
             </div>
           </article>
@@ -381,6 +394,7 @@ import StreamerModal from '../components/StreamerModal.vue'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
 import { fetchArticles, fetchStreamers } from '../api'
 import { buildApiUrl, API_ENDPOINTS } from '../config/api.js'
+import { proxyImagesInHtml, getProxiedImageUrl } from '../utils/imageProxy.js'
 
 dayjs.extend(relativeTime)
 dayjs.locale('zh-cn')
@@ -395,6 +409,10 @@ const selectedAuthor = ref(null)
 const lastUpdateTime = ref(null)
 const nextCursor = ref(null)
 const hasMore = ref(true)
+
+// 新内容提示
+const hasNewContent = ref(false)
+const newContentCount = ref(0)
 
 // 搜索
 const searchQuery = ref('')
@@ -633,10 +651,21 @@ const loadArticles = async (append = false) => {
     const response = await fetch(buildApiUrl(`${API_ENDPOINTS.articles}?${params}`))
     const data = await response.json()
     
+    // 处理文章中的图片代理
+    const processedArticles = data.articles.map(article => ({
+      ...article,
+      contentHtml: proxyImagesInHtml(article.contentHtml),
+      contentHtmlTranslated: proxyImagesInHtml(article.contentHtmlTranslated),
+      writer: {
+        ...article.writer,
+        image: getProxiedImageUrl(article.writer.image)
+      }
+    }))
+    
     if (append) {
-      articles.value = [...articles.value, ...data.articles]
+      articles.value = [...articles.value, ...processedArticles]
     } else {
-      articles.value = data.articles
+      articles.value = processedArticles
     }
     
     // 更新游标和是否有更多
@@ -668,6 +697,55 @@ const loadArticles = async (append = false) => {
     loading.value = false
     loadingMore.value = false
   }
+}
+
+// 检查新内容（后台静默检查）
+const checkNewContent = async () => {
+  try {
+    const response = await fetch(buildApiUrl(`${API_ENDPOINTS.articles}?limit=1`))
+    const data = await response.json()
+    
+    if (data.articles && data.articles.length > 0) {
+      const latestArticleId = data.articles[0].articleId
+      const currentLatestId = articles.value[0]?.articleId
+      
+      // 如果最新文章ID不同，说明有新内容
+      if (currentLatestId && latestArticleId !== currentLatestId) {
+        // 获取新文章数量
+        const newArticles = []
+        for (const article of data.articles) {
+          if (article.articleId === currentLatestId) break
+          newArticles.push(article)
+        }
+        
+        // 如果只获取了1条，可能还有更多，再请求一次
+        if (newArticles.length === 1) {
+          const moreResponse = await fetch(buildApiUrl(`${API_ENDPOINTS.articles}?limit=20`))
+          const moreData = await moreResponse.json()
+          const moreNewArticles = []
+          for (const article of moreData.articles) {
+            if (article.articleId === currentLatestId) break
+            moreNewArticles.push(article)
+          }
+          newContentCount.value = moreNewArticles.length
+        } else {
+          newContentCount.value = newArticles.length
+        }
+        
+        hasNewContent.value = true
+      }
+    }
+  } catch (error) {
+    console.error('检查新内容失败:', error)
+  }
+}
+
+// 刷新内容
+const refreshContent = () => {
+  hasNewContent.value = false
+  newContentCount.value = 0
+  loadArticles()
+  loadStreamers()
 }
 
 const toggleAuthorFilter = (authorNick) => {
@@ -763,8 +841,11 @@ onMounted(() => {
   loadArticles()
   loadStreamers()
   
-  // 定时刷新主播状态
-  setInterval(loadStreamers, 30000) // 30秒刷新一次
+  // 定时刷新主播状态（30秒）
+  setInterval(loadStreamers, 30000)
+  
+  // 定时检查新内容（60秒）
+  setInterval(checkNewContent, 60000)
   
   // 添加滚动监听
   window.addEventListener('scroll', handleScroll)
@@ -775,3 +856,22 @@ onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
 })
 </script>
+
+
+<style scoped>
+/* 新内容提示动画 */
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.3s ease;
+}
+
+.slide-down-enter-from {
+  transform: translateY(-100%);
+  opacity: 0;
+}
+
+.slide-down-leave-to {
+  transform: translateY(-100%);
+  opacity: 0;
+}
+</style>

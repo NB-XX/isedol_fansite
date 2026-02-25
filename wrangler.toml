@@ -1,0 +1,14 @@
+name = "isedol-fansite-api"
+main = "workers/index.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 数据库绑定
+[[d1_databases]]
+binding = "DB"
+database_name = "isedol-fansite-db"
+database_id = "e36fe482-592e-460c-95a7-3b537e134d50"
+
+# 定时任务（爬虫）
+[triggers]
+crons = ["*/10 * * * *"]

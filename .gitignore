@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+.env.vps
 
 # 数据文件
 data/
@@ -42,13 +43,17 @@ desktop.ini
 *.tmp
 .cache/
 .temp/
+*.tar.gz
 
-# 测试文件（如果有）
+# 测试文件
 test-*.html
 *.test.js
 coverage/
 
-# 临时文档
-FIXES.md
-UI-IMPROVEMENTS.md
-api-response.json
+# Wrangler
+.wrangler/
+.dev.vars
+
+# PM2
+.pm2/
+

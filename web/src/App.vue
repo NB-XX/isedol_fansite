@@ -30,8 +30,11 @@ const config = ref({
 
 const musicPlaylist = computed(() => {
   try {
-    return JSON.parse(config.value.MUSIC_PLAYLIST || '[]')
+    const playlist = JSON.parse(config.value.MUSIC_PLAYLIST || '[]')
+    console.log('Music playlist loaded:', playlist)
+    return playlist
   } catch (e) {
+    console.error('Failed to parse music playlist:', e)
     return []
   }
 })
@@ -42,6 +45,10 @@ const backgroundStyle = computed(() => {
   if (!config.value.BACKGROUND_IMAGE) {
     return { backgroundColor: '#f9fafb' } // default gray-50
   }
+  
+  console.log('Background image:', config.value.BACKGROUND_IMAGE)
+  console.log('Background blur:', config.value.BACKGROUND_BLUR)
+  
   return {
     backgroundImage: `url(${config.value.BACKGROUND_IMAGE})`,
     filter: `blur(${config.value.BACKGROUND_BLUR}px)`
@@ -50,9 +57,12 @@ const backgroundStyle = computed(() => {
 
 onMounted(async () => {
   try {
+    console.log('Loading public settings...')
     const response = await axios.get(buildApiUrl(API_ENDPOINTS.settingsPublic))
+    console.log('Settings response:', response.data)
     if (response.data.config) {
       config.value = { ...config.value, ...response.data.config }
+      console.log('Config updated:', config.value)
     }
   } catch (error) {
     console.error('Failed to load public settings:', error)

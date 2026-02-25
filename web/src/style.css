@@ -74,9 +74,25 @@
   font-size: 16px;
 }
 
+/* 韩语原文使用 Goseogu 字体 - 增大字号 */
+.cafe-content[lang="ko"],
+.cafe-content[lang="ko"] *,
+.cafe-content .korean-text,
+.se-viewer,
+.se-text-paragraph {
+  font-family: 'Goseogu', 'Nanum Barun Gothic', '맑은 고딕', 'Malgun Gothic', sans-serif !important;
+  font-size: 1.8rem !important; /* 22px */
+  line-height: 1.3 !important;
+}
+
+/* 韩语段落间距调整 */
+.cafe-content[lang="ko"] p,
+.cafe-content[lang="ko"] .se-text-paragraph {
+  margin-bottom: 0.5rem;
+}
+
 /* Naver Smart Editor 样式 */
 .se-viewer {
-  font-size: 14px;
   line-height: 1.8;
   color: #333;
 }
@@ -165,7 +181,6 @@
 .se-text-paragraph {
   margin: 8px 0;
   line-height: 1.8;
-  font-size: 16px;
 }
 
 .se-text-paragraph-align-center {
@@ -194,7 +209,6 @@
 /* 段落样式 */
 .cafe-content p {
   @apply mb-3 text-gray-700;
-  font-size: 16px;
   line-height: 1.8;
 }
 

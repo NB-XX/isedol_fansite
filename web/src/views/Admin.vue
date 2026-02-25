@@ -275,8 +275,10 @@
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
                     {{ article.articleId }}
                   </td>
-                  <td class="px-6 py-4 text-sm text-gray-800 max-w-md truncate font-medium">
-                    {{ article.subject }}
+                  <td class="px-6 py-4 text-sm text-gray-800 max-w-md font-medium">
+                    <div class="truncate" :title="article.subject">
+                      {{ article.subject }}
+                    </div>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
                     <div class="flex items-center">
@@ -447,12 +449,12 @@
 
     <!-- 人工翻译模态框 -->
     <div v-if="translateModal.show" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div class="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         <!-- 模态框头部 -->
         <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-purple-50 to-pink-50">
           <div>
             <h3 class="text-xl font-bold text-gray-900">人工翻译</h3>
-            <p class="text-sm text-gray-500 mt-1">编辑翻译内容（支持HTML格式）</p>
+            <p class="text-sm text-gray-500 mt-1">直接在预览区域编辑翻译内容</p>
           </div>
           <button
             @click="closeTranslateModal"
@@ -483,30 +485,65 @@
             />
           </div>
 
-          <!-- 原文内容预览 -->
-          <div class="bg-gray-50 rounded-xl p-4 border border-gray-200">
-            <h4 class="text-sm font-semibold text-gray-700 mb-2">原文内容（HTML）</h4>
-            <div class="max-h-40 overflow-y-auto">
-              <pre class="text-xs text-gray-600 whitespace-pre-wrap font-mono">{{ translateModal.article?.contentHtml || translateModal.article?.content }}</pre>
+          <!-- 原文内容预览（可折叠） -->
+          <div class="bg-gray-50 rounded-xl border border-gray-200">
+            <button
+              @click="translateModal.showOriginal = !translateModal.showOriginal"
+              class="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-100 transition-colors rounded-xl"
+            >
+              <h4 class="text-sm font-semibold text-gray-700">原文内容</h4>
+              <svg
+                :class="['w-5 h-5 text-gray-500 transition-transform', translateModal.showOriginal ? 'rotate-180' : '']"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <div v-if="translateModal.showOriginal" class="px-4 pb-4 max-h-60 overflow-y-auto border-t border-gray-200">
+              <div class="prose prose-sm max-w-none mt-4" v-html="translateModal.article?.contentHtml || translateModal.article?.content"></div>
             </div>
           </div>
 
-          <!-- 翻译内容（HTML编辑器） -->
+          <!-- 翻译内容（所见即所得编辑器） -->
           <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-2">翻译内容（HTML格式）</label>
-            <textarea
-              v-model="translateModal.contentHtmlTranslated"
-              rows="12"
-              class="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all font-mono text-sm"
-              placeholder="输入翻译后的HTML内容..."
-            ></textarea>
-            <p class="mt-2 text-xs text-gray-500">提示：可以直接编辑HTML标签，保留图片和格式</p>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">翻译内容（可直接编辑）</label>
+            <div
+              ref="editableContent"
+              contenteditable="true"
+              @input="handleContentEdit"
+              class="w-full min-h-[300px] px-4 py-3 bg-white border-2 border-purple-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all prose prose-sm max-w-none"
+              v-html="translateModal.contentHtmlTranslated"
+            ></div>
+            <p class="mt-2 text-xs text-gray-500">提示：直接在上方编辑区域输入翻译内容，支持图片和格式</p>
           </div>
 
-          <!-- 预览 -->
-          <div v-if="translateModal.contentHtmlTranslated" class="bg-blue-50 rounded-xl p-4 border border-blue-200">
-            <h4 class="text-sm font-semibold text-blue-700 mb-2">翻译预览</h4>
-            <div class="prose prose-sm max-w-none" v-html="translateModal.contentHtmlTranslated"></div>
+          <!-- HTML源码（可折叠） -->
+          <div class="bg-gray-50 rounded-xl border border-gray-200">
+            <button
+              @click="translateModal.showHtml = !translateModal.showHtml"
+              class="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-100 transition-colors rounded-xl"
+            >
+              <h4 class="text-sm font-semibold text-gray-700">HTML源码（高级）</h4>
+              <svg
+                :class="['w-5 h-5 text-gray-500 transition-transform', translateModal.showHtml ? 'rotate-180' : '']"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <div v-if="translateModal.showHtml" class="px-4 pb-4 border-t border-gray-200">
+              <textarea
+                v-model="translateModal.contentHtmlTranslated"
+                @input="updateEditableContent"
+                rows="8"
+                class="w-full mt-4 px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all font-mono text-sm"
+                placeholder="HTML源码..."
+              ></textarea>
+            </div>
           </div>
         </div>
 
@@ -532,10 +569,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 import Settings from './Settings.vue';
+import { buildApiUrl, API_ENDPOINTS } from '../config/api.js';
 
 const router = useRouter();
 const isAuthenticated = ref(false);
@@ -545,6 +583,7 @@ const loading = ref(false);
 const activeTab = ref('dashboard');
 
 const stats = ref({});
+const editableContent = ref(null);
 const articles = ref([]);
 const selectedArticles = ref([]);
 const selectedArticle = ref(null);
@@ -592,7 +631,7 @@ async function handleLogin() {
   loading.value = true;
 
   try {
-    const response = await axios.post('http://localhost:8080/api/settings/auth', {
+    const response = await axios.post(buildApiUrl(API_ENDPOINTS.settingsAuth), {
       password: password.value
     });
 
@@ -618,7 +657,7 @@ function handleLogout() {
 async function loadStats() {
   try {
     const token = sessionStorage.getItem('settings_token');
-    const response = await axios.get('http://localhost:8080/api/admin/stats', {
+    const response = await axios.get(buildApiUrl(API_ENDPOINTS.adminStats), {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     stats.value = response.data;
@@ -630,7 +669,7 @@ async function loadStats() {
 async function loadArticles() {
   try {
     const token = sessionStorage.getItem('settings_token');
-    const response = await axios.get('http://localhost:8080/api/admin/articles', {
+    const response = await axios.get(buildApiUrl(API_ENDPOINTS.adminArticles), {
       params: {
         page: pagination.value.page,
         limit: pagination.value.limit,
@@ -663,7 +702,7 @@ async function deleteArticle(id) {
 
   try {
     const token = sessionStorage.getItem('settings_token');
-    await axios.delete(`http://localhost:8080/api/admin/articles/${id}`, {
+    await axios.delete(buildApiUrl(API_ENDPOINTS.adminArticleDelete(id)), {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
@@ -680,7 +719,7 @@ async function deleteTranslation(id) {
 
   try {
     const token = sessionStorage.getItem('settings_token');
-    await axios.delete(`http://localhost:8080/api/admin/articles/${id}/translation`, {
+    await axios.delete(buildApiUrl(API_ENDPOINTS.adminArticleTranslationDelete(id)), {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
@@ -705,7 +744,7 @@ async function batchDelete() {
 
   try {
     const token = sessionStorage.getItem('settings_token');
-    await axios.post('http://localhost:8080/api/admin/articles/batch-delete',
+    await axios.post(buildApiUrl(API_ENDPOINTS.adminBatchDelete),
       { ids: selectedArticles.value },
       { headers: { 'Authorization': `Bearer ${token}` } }
     );
@@ -728,7 +767,7 @@ async function batchTranslate() {
     // 显示翻译中的通知
     showNotification(`开始翻译 ${selectedArticles.value.length} 篇文章，请稍候...`, 'info');
     
-    const response = await axios.post('http://localhost:8080/api/admin/articles/batch-translate',
+    const response = await axios.post(buildApiUrl(API_ENDPOINTS.adminBatchTranslate),
       { ids: selectedArticles.value },
       { headers: { 'Authorization': `Bearer ${token}` } }
     );
@@ -749,7 +788,7 @@ async function batchTranslate() {
           await loadArticles();
           
           // 检查选中的文章是否都已翻译
-          const articles = await axios.get('http://localhost:8080/api/admin/articles', {
+          const articles = await axios.get(buildApiUrl(API_ENDPOINTS.adminArticles), {
             params: {
               page: pagination.value.page,
               limit: pagination.value.limit
@@ -790,8 +829,17 @@ function openTranslateModal(article) {
     show: true,
     article: article,
     subjectTranslated: article.subjectTranslated || '',
-    contentHtmlTranslated: article.contentHtmlTranslated || article.contentHtml || article.content?.replace(/\n/g, '<br>') || ''
+    contentHtmlTranslated: article.contentHtmlTranslated || article.contentHtml || article.content?.replace(/\n/g, '<br>') || '',
+    showOriginal: false,
+    showHtml: false
   };
+  
+  // 等待DOM更新后设置可编辑内容
+  nextTick(() => {
+    if (editableContent.value) {
+      editableContent.value.innerHTML = translateModal.value.contentHtmlTranslated;
+    }
+  });
 }
 
 function closeTranslateModal() {
@@ -799,8 +847,22 @@ function closeTranslateModal() {
     show: false,
     article: null,
     subjectTranslated: '',
-    contentHtmlTranslated: ''
+    contentHtmlTranslated: '',
+    showOriginal: false,
+    showHtml: false
   };
+}
+
+// 处理可编辑内容的输入
+function handleContentEdit(event) {
+  translateModal.value.contentHtmlTranslated = event.target.innerHTML;
+}
+
+// 从HTML源码更新可编辑内容
+function updateEditableContent() {
+  if (editableContent.value) {
+    editableContent.value.innerHTML = translateModal.value.contentHtmlTranslated;
+  }
 }
 
 async function saveManualTranslation() {
@@ -809,7 +871,7 @@ async function saveManualTranslation() {
     
     showNotification('正在保存翻译...', 'info');
     
-    await axios.post(`http://localhost:8080/api/articles/${articleId}/manual-translate`, {
+    await axios.post(buildApiUrl(API_ENDPOINTS.articleManualTranslate(articleId)), {
       subjectTranslated: translateModal.value.subjectTranslated,
       contentHtmlTranslated: translateModal.value.contentHtmlTranslated
     });

@@ -8,7 +8,7 @@
               <div class="flex items-center space-x-4">
                 <img :src="streamer.avatar" :alt="streamer.name" class="w-16 h-16 rounded-full border-4 border-white shadow-lg" />
                 <div>
-                  <h2 class="text-2xl font-bold">{{ streamer.name }}</h2>
+                  <h2 lang="ko" class="text-2xl font-bold" style="font-family: 'Goseogu', sans-serif; font-size: 1.75rem;">{{ streamer.name }}</h2>
                   <p v-if="streamer.isLive" class="text-sm flex items-center mt-1">
                     <span class="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse"></span>
                     正在直播
@@ -94,25 +94,58 @@
                             <p class="text-xs text-gray-600 mb-1">
                               <span class="font-medium">分类:</span> {{ record.category }}
                             </p>
-                            <div v-if="record.broad_no" class="mt-2">
-                              <span class="text-xs text-gray-500">直播ID: {{ record.broad_no }}</span>
+                            <div v-if="record.broadNo" class="mt-2">
+                              <span class="text-xs text-gray-500">直播ID: {{ record.broadNo }}</span>
                             </div>
                           </div>
-                          <div v-if="record.action === 'title_change' && record.metadata && record.metadata.oldTitle" class="text-sm text-gray-700">
-                            <span class="line-through opacity-60">{{ record.metadata.oldTitle }}</span>
-                            <span class="mx-2">→</span>
-                            <span>{{ record.title }}</span>
+                          <div v-else-if="record.action === 'title_change'">
+                            <div v-if="record.metadata && record.metadata.oldTitle" class="text-sm text-gray-700">
+                              <span class="line-through opacity-60">{{ record.metadata.oldTitle }}</span>
+                              <span class="mx-2">→</span>
+                              <span>{{ record.title }}</span>
+                            </div>
+                            <div v-else class="text-sm text-gray-700">
+                              <span class="font-medium">标题:</span> {{ record.title }}
+                            </div>
                           </div>
-                          <div v-if="record.action === 'category_change' && record.metadata && record.metadata.oldCategory" class="text-sm text-gray-700">
-                            <span class="line-through opacity-60">{{ record.metadata.oldCategory }}</span>
-                            <span class="mx-2">→</span>
-                            <span>{{ record.category }}</span>
+                          <div v-else-if="record.action === 'category_change'">
+                            <div v-if="record.metadata && record.metadata.oldCategory" class="text-sm text-gray-700">
+                              <span class="line-through opacity-60">{{ record.metadata.oldCategory }}</span>
+                              <span class="mx-2">→</span>
+                              <span>{{ record.category }}</span>
+                            </div>
+                            <div v-else class="text-sm text-gray-700">
+                              <span class="font-medium">分类:</span> {{ record.category }}
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
+                <!-- 加载更多按钮 -->
+                <div v-if="hasMoreHistory" class="mt-6 text-center">
+                  <button
+                    @click="loadMoreHistory"
+                    :disabled="loadingHistory"
+                    class="px-6 py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white rounded-xl hover:from-emerald-600 hover:to-cyan-600 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <span v-if="loadingHistory">加载中...</span>
+                    <span v-else>加载更多 ({{ history.length }}/{{ historyStats.totalRecords }})</span>
+                  </button>
+                </div>
+                <!-- 历史记录统计 -->
+                <div v-if="historyStats.totalRecords > 0" class="mt-4 text-center text-sm text-gray-500">
+                  <p>共 {{ historyStats.totalRecords }} 条记录</p>
+                  <p v-if="historyStats.earliest">最早记录: {{ formatDate(historyStats.earliest) }}</p>
+                </div>
+              </div>
+              <div v-else-if="loadingHistory && history.length === 0" class="text-center py-12">
+                <svg class="animate-spin h-10 w-10 text-emerald-500 mx-auto mb-4" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="text-gray-600">加载历史记录中...</p>
               </div>
               <div v-else class="text-center py-12 text-gray-400">
                 <svg class="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -266,6 +299,16 @@ const loadingTranslation = ref(false)
 const liveDuration = ref('计算中...')
 let durationInterval = null
 
+// 历史记录相关状态
+const history = ref([])
+const loadingHistory = ref(false)
+const historyStats = ref({
+  totalRecords: 0,
+  earliest: null,
+  latest: null
+})
+const hasMoreHistory = ref(true)
+
 // 缓存机制：存储原始数据和翻译结果
 const summaryCache = ref({
   originalHash: null,  // 原始数据的哈希值
@@ -417,7 +460,63 @@ const updateDuration = () => {
   }
 }
 
+// 加载历史记录
+const loadHistory = async (before = null) => {
+  if (loadingHistory.value) return
+  
+  loadingHistory.value = true
+  try {
+    let url = buildApiUrl(API_ENDPOINTS.streamerHistory(props.streamer.id))
+    const params = new URLSearchParams()
+    params.append('limit', '30')
+    if (before) {
+      params.append('before', before)
+    }
+    url += '?' + params.toString()
+    
+    const response = await fetch(url)
+    if (!response.ok) {
+      throw new Error('无法获取历史记录')
+    }
+    const data = await response.json()
+    
+    // 更新统计信息
+    historyStats.value = {
+      totalRecords: data.totalRecords,
+      earliest: data.earliest,
+      latest: data.latest
+    }
+    
+    // 追加历史记录
+    if (before) {
+      history.value = [...history.value, ...data.history]
+    } else {
+      history.value = data.history
+    }
+    
+    // 检查是否还有更多记录
+    hasMoreHistory.value = data.history.length === 30 && history.value.length < data.totalRecords
+  } catch (error) {
+    console.error('加载历史记录失败:', error)
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
+// 加载更多历史记录
+const loadMoreHistory = () => {
+  if (!hasMoreHistory.value || loadingHistory.value) return
+  
+  const lastRecord = history.value[history.value.length - 1]
+  if (lastRecord) {
+    loadHistory(lastRecord.timestamp)
+  }
+}
+
 onMounted(() => {
+  // 加载历史记录
+  loadHistory()
+  
   if (props.streamer.isLive && props.streamer.broadStart) {
     updateDuration()
     durationInterval = setInterval(updateDuration, 1000)
@@ -431,11 +530,11 @@ onUnmounted(() => {
 })
 
 const groupedHistory = computed(() => {
-  if (!props.streamer.history || props.streamer.history.length === 0) {
+  if (!history.value || history.value.length === 0) {
     return {}
   }
   const groups = {}
-  props.streamer.history.forEach(record => {
+  history.value.forEach(record => {
     if (record.metadata && typeof record.metadata === 'string') {
       try {
         record.metadata = JSON.parse(record.metadata)

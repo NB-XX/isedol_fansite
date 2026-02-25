@@ -1,5 +1,5 @@
 // API 配置
-// 开发环境自动使用当前主机的 IP 地址，支持局域网访问
+// 开发环境使用线上 Workers API
 // 生产环境使用相对路径或配置的 API 地址
 
 const isDev = import.meta.env.DEV
@@ -7,9 +7,8 @@ const isDev = import.meta.env.DEV
 // 获取 API 基础 URL
 export const getApiBaseUrl = () => {
   if (isDev) {
-    // 开发环境：使用当前主机的 IP 和端口 8080
-    // 这样在局域网中访问时，API 请求会自动使用正确的 IP
-    return `http://${window.location.hostname}:8080`
+    // 开发环境：使用环境变量配置的 API 地址（线上 Workers API）
+    return import.meta.env.VITE_API_BASE_URL || 'https://isedol-fansite-api.q905401052.workers.dev'
   } else {
     // 生产环境：使用相对路径或环境变量
     return import.meta.env.VITE_API_BASE_URL || ''
