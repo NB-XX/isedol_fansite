@@ -14,6 +14,7 @@ export class CafeScraper {
         this.db = new ArticleDatabase();
         this.translator = new Translator();
         this.isRunning = false;
+        this.scrapePromise = null;
         
         // 主播头像映射（使用 Soop Live 头像）
         this.ISEDOL_AVATARS = {
@@ -243,7 +244,7 @@ export class CafeScraper {
         return article;
     }
 
-    async scrape() {
+    async runScrape() {
         logger.info('CafeScraper', '开始爬取文章');
 
         const articleList = await this.fetchArticleList(1);
@@ -300,6 +301,19 @@ export class CafeScraper {
         logger.info('CafeScraper', `爬取完成: 新增 ${newCount} 篇，共 ${result.total} 篇`);
         
         return result;
+    }
+
+    async scrape() {
+        if (this.scrapePromise) {
+            logger.warn('CafeScraper', '已有爬取任务在执行，复用当前任务');
+            return this.scrapePromise;
+        }
+
+        this.scrapePromise = this.runScrape().finally(() => {
+            this.scrapePromise = null;
+        });
+
+        return this.scrapePromise;
     }
 
     sleep(ms) {

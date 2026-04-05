@@ -85,6 +85,14 @@
   line-height: 1.3 !important;
 }
 
+/* 翻译内容使用正常字体和字号 */
+.cafe-content.translated-content,
+.cafe-content.translated-content * {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif !important;
+  font-size: 1rem !important; /* 16px */
+  line-height: 1.8 !important;
+}
+
 /* 韩语段落间距调整 */
 .cafe-content[lang="ko"] p,
 .cafe-content[lang="ko"] .se-text-paragraph {

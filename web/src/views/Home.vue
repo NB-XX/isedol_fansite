@@ -311,7 +311,8 @@
                 </div>
                 <div v-else class="relative">
                   <div 
-                    class="article-content cafe-content text-gray-700 text-base leading-relaxed mb-4 overflow-hidden transition-all duration-300"
+                    lang="zh-CN"
+                    class="article-content cafe-content translated-content text-gray-700 text-base leading-relaxed mb-4 overflow-hidden transition-all duration-300"
                     :class="!isExpanded(article.articleId) && needsCollapse(article.articleId) ? 'max-h-[400px]' : ''"
                   >
                     <!-- 翻译后的HTML内容（保留图片和格式） -->
@@ -319,7 +320,7 @@
                     <!-- 如果没有HTML翻译，显示纯文本翻译 -->
                     <div v-else-if="article.contentTranslated" class="whitespace-pre-wrap text-base">{{ article.contentTranslated }}</div>
                     <!-- 都没有则显示原文 -->
-                    <div v-else v-html="article.contentHtml || article.content"></div>
+                    <div v-else lang="ko" v-html="article.contentHtml || article.content"></div>
                   </div>
                   <!-- 渐变遮罩和展开按钮 -->
                   <div 
