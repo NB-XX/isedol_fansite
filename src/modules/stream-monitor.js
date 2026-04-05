@@ -61,15 +61,24 @@ export class StreamMonitor {
         }
 
         try {
-            const url = `https://api-channel.sooplive.co.kr/v1.1/channel/${userId}/home/section/broad`;
+            const url = `https://api-channel.sooplive.com/v1.1/channel/${userId}/home/section/broad`;
             const response = await fetch(url);
             
+            if (response.status === 404 || response.status === 204) {
+                return null;
+            }
+
             if (!response.ok) {
                 logger.warn('StreamMonitor', `SOOP API 请求失败: ${response.status}`);
                 return null;
             }
 
-            const data = await response.json();
+            const body = await response.text();
+            if (!body || !body.trim()) {
+                return null;
+            }
+
+            const data = JSON.parse(body);
             return this.normalizeBroadData(streamerId, data || {});
         } catch (error) {
             logger.error('StreamMonitor', `获取直播详情失败: ${error.message}`);
