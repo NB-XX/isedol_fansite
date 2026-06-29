@@ -57,11 +57,19 @@ export class SimpleDatabase {
 
   // 直播历史
   addStreamHistory(record) {
+    // 与该主播最近一条记录完全相同时跳过，防止源数据重复推送导致的重复事件
+    const last = this.streamHistory[this.streamHistory.length - 1];
+    const signature = (r) =>
+      [r.action, r.broadNo || '', r.title || '', r.category || '', r.oldTitle || '', r.oldCategory || ''].join('|');
+    if (last && last.streamerId === record.streamerId && signature(last) === signature(record)) {
+      return;
+    }
+
     this.streamHistory.push({
       ...record,
       timestamp: new Date().toISOString()
     });
-    
+
     // 只保留最近 1000 条
     if (this.streamHistory.length > 1000) {
       this.streamHistory = this.streamHistory.slice(-1000);

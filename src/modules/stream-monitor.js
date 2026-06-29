@@ -103,13 +103,56 @@ export class StreamMonitor {
         }
     }
 
-    async applyState(currentData) {
+    async applyState(currentData, source = 'soop') {
         if (!currentData) return;
 
         const normalizedData = {};
 
         for (const [streamerId, info] of Object.entries(currentData)) {
             normalizedData[streamerId] = this.normalizeBroadData(streamerId, info);
+        }
+
+        // 先补全在线主播缺失的关键字段，再做变更检测。
+        // - 源数据偶发缺字段会让 category/title 在“有值/空值”间反复抖动 → 用上次有效值兜底
+        // - Firebase 推送的分类为韩文，SOOP 接口推送为英文，两源语言不一致会让同一分类
+        //   在 KR/EN 间横跳。统一以 SOOP 为分类权威来源：对 Firebase 数据不采用其 category，
+        //   改由 SOOP 详情或上次 SOOP 值提供，杜绝语言抖动（Firebase 仍负责实时开播/下播检测）。
+        for (const [streamerId, info] of Object.entries(normalizedData)) {
+            if (!info.online) continue;
+
+            const previous = this.db.getStream(streamerId);
+            const isNewStream = !previous
+                || !previous.online
+                || (info.broadNo && previous.broadNo && info.broadNo !== previous.broadNo);
+
+            // Firebase 的分类语言与 SOOP 不一致，统一丢弃，由 SOOP 提供
+            if (source === 'firebase') {
+                info.category = '';
+            }
+
+            // 缺少 broadNo，或新开播时缺分类/标题 → 向 SOOP 拉取详情补全（提供规范分类）
+            if (!info.broadNo || (isNewStream && (!info.title || !info.category))) {
+                const details = await this.fetchBroadDetails(streamerId);
+                if (details && details.online) {
+                    info.broadNo = info.broadNo || details.broadNo;
+                    info.broadStart = info.broadStart || details.broadStart;
+                    info.title = info.title || details.title;
+                    info.category = info.category || details.category;
+                }
+            }
+
+            // 同一场直播（broadNo 缺失或与上次相同）时，保留上次的有效值，
+            // 避免源数据偶发缺字段导致字段被空值覆盖。
+            const sameStream = previous
+                && previous.online
+                && (!info.broadNo || info.broadNo === previous.broadNo);
+
+            if (sameStream) {
+                info.broadNo = info.broadNo || previous.broadNo;
+                info.broadStart = info.broadStart || previous.broadStart;
+                info.title = info.title || previous.title;
+                info.category = info.category || previous.category;
+            }
         }
 
         if (this.isFirstRun) {
@@ -119,39 +162,11 @@ export class StreamMonitor {
             await this.detectChanges(normalizedData);
         }
 
-        // 更新数据库 - 确保传递完整的数据
+        // 此时字段已稳定，写回数据库
         for (const [streamerId, info] of Object.entries(normalizedData)) {
-            // 如果是在线状态，尝试获取详细信息
-            let broadNo = info.broadNo;
-            let broadStart = info.broadStart;
-            let title = info.title;
-            let category = info.category;
-            
-            if (info.online) {
-                const previous = this.db.getStream(streamerId);
-                // 如果之前没有 broadNo，或者是新开播，则获取详细信息
-                if (!broadNo || !broadStart || !title || !category || !previous || !previous.broadNo || !previous.online) {
-                    const details = await this.fetchBroadDetails(streamerId);
-                    if (details && details.online) {
-                        broadNo = details.broadNo;
-                        broadStart = details.broadStart;
-                        title = details.title || title;
-                        category = details.category || category;
-                    }
-                } else {
-                    // 使用之前保存的信息
-                    broadNo = broadNo || previous.broadNo;
-                    broadStart = broadStart || previous.broadStart;
-                }
-            }
-            
             const streamData = {
                 ...info,
-                name: info.name || this.streamers[streamerId]?.name || streamerId,
-                title,
-                category,
-                broadNo,
-                broadStart
+                name: info.name || this.streamers[streamerId]?.name || streamerId
             };
             this.db.updateStream(streamerId, streamData);
         }
@@ -159,7 +174,7 @@ export class StreamMonitor {
     }
 
     async handleSnapshot(snapshot) {
-        await this.applyState(snapshot.val());
+        await this.applyState(snapshot.val(), 'firebase');
     }
 
     displayInitialStatus(data) {
@@ -185,41 +200,29 @@ export class StreamMonitor {
         for (const [streamerId, info] of Object.entries(currentData)) {
             const previous = previousData[streamerId];
             const name = info.name || this.streamers[streamerId]?.name || streamerId;
-            let broadNo = info.broadNo || null;
-            let broadStart = info.broadStart || null;
 
-            // 开播
+            // 开播（info 已在 applyState 中补全字段）
             if (info.online && (!previous || !previous.online)) {
                 logger.success('StreamMonitor', `[开播] ${name}`);
                 console.log(`  标题: ${info.title}`);
                 console.log(`  分类: ${info.category}`);
-                
-                // 调用 SOOP API 获取详细信息
-                const details = broadNo ? info : await this.fetchBroadDetails(streamerId);
-                if (details && details.online) {
-                    broadNo = details.broadNo;
-                    broadStart = details.broadStart;
-                    console.log(`  直播ID: ${broadNo}`);
-                    console.log(`  开播时间: ${broadStart}`);
-                }
-                
+                console.log(`  直播ID: ${info.broadNo || '-'}`);
+                console.log(`  开播时间: ${info.broadStart || '-'}`);
                 console.log(`  时间: ${new Date().toLocaleTimeString()}`);
-                
-                // 记录开播事件到数据库
+
                 this.db.addStreamEvent({
                     streamerId,
                     name,
                     action: 'start',
                     title: info.title,
                     category: info.category,
-                    broadNo
+                    broadNo: info.broadNo
                 });
             }
             // 下播
             else if (!info.online && previous && previous.online) {
                 logger.info('StreamMonitor', `[下播] ${name}`);
-                
-                // 记录下播事件到数据库
+
                 this.db.addStreamEvent({
                     streamerId,
                     name,
@@ -231,10 +234,11 @@ export class StreamMonitor {
             }
             // 在线时的更新
             else if (info.online && previous && previous.online) {
-                // 标题更新
-                if (info.title !== previous.title) {
+                // 仅当“新值与旧值都真实存在且不同”时才记录变更。
+                // 源数据偶发缺字段（空值）会被 applyState 用上次的有效值补回，
+                // 因此这里不会出现 null↔value 的抖动；任何空值都不视为变更。
+                if (info.title && previous.title && info.title !== previous.title) {
                     logger.info('StreamMonitor', `[标题更新] ${name}: ${info.title}`);
-                    // 记录标题更新到数据库
                     this.db.addStreamEvent({
                         streamerId,
                         name,
@@ -242,13 +246,11 @@ export class StreamMonitor {
                         title: info.title,
                         category: info.category,
                         oldTitle: previous.title,
-                        broadNo: previous.broadNo
+                        broadNo: info.broadNo
                     });
                 }
-                // 分类更新
-                if (info.category !== previous.category) {
+                if (info.category && previous.category && info.category !== previous.category) {
                     logger.info('StreamMonitor', `[分类更新] ${name}: ${info.category}`);
-                    // 记录分类更新到数据库
                     this.db.addStreamEvent({
                         streamerId,
                         name,
@@ -256,7 +258,7 @@ export class StreamMonitor {
                         title: info.title,
                         category: info.category,
                         oldCategory: previous.category,
-                        broadNo: previous.broadNo
+                        broadNo: info.broadNo
                     });
                 }
             }
@@ -286,7 +288,7 @@ export class StreamMonitor {
     async reconcileWithSoop() {
         try {
             const polledState = await this.fetchSoopState();
-            await this.applyState(polledState);
+            await this.applyState(polledState, 'soop');
         } catch (error) {
             logger.error('StreamMonitor', `SOOP 校准失败: ${error.message}`);
         }

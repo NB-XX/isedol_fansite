@@ -19,30 +19,21 @@ export default {
   // 定时任务（爬虫）
   async scheduled(event, env, ctx) {
     console.log('Cron triggered at', new Date(event.scheduledTime));
-    
+
     try {
-      // 导入爬虫模块
-      const { NaverCafeScraper } = await import('./naver-scraper.js');
       const { SoopScraper } = await import('./soop-scraper.js');
-      
-      // 初始化爬虫
-      const naverScraper = new NaverCafeScraper(env);
       const soopScraper = new SoopScraper(env);
-      
-      // 运行 Naver Cafe 爬虫
-      console.log('Starting Naver Cafe scraper...');
-      const naverResult = await naverScraper.scrape();
-      console.log('Naver scraper completed:', naverResult);
-      
-      // 运行 SOOP 爬虫
+
+      // Workers Cron 仅负责 SOOP 公告板抓取。
+      // Naver Cafe 抓取由 VPS 负责（需要代理绕过地域限制 + 自动翻译），
+      // VPS 的 CafeScraper 自带 10 分钟定时器，无需在此重复触发。
       console.log('Starting SOOP scraper...');
       const soopResult = await soopScraper.scrape();
       console.log('SOOP scraper completed:', soopResult);
-      
-      return new Response(JSON.stringify({ 
-        success: true, 
+
+      return new Response(JSON.stringify({
+        success: true,
         results: {
-          naver: naverResult,
           soop: soopResult
         }
       }), {
@@ -50,9 +41,9 @@ export default {
       });
     } catch (error) {
       console.error('Scraper failed:', error);
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: error.message 
+      return new Response(JSON.stringify({
+        success: false,
+        error: error.message
       }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
@@ -1516,37 +1507,49 @@ async function translateJson(request, env, headers) {
 // 手动触发爬虫
 async function triggerScraper(env, headers) {
   try {
-    // 导入爬虫模块
-    const { NaverCafeScraper } = await import('./naver-scraper.js');
     const { SoopScraper } = await import('./soop-scraper.js');
-    
-    // 初始化爬虫
-    const naverScraper = new NaverCafeScraper(env);
     const soopScraper = new SoopScraper(env);
-    
-    // 运行 Naver Cafe 爬虫
-    console.log('Manually triggering Naver Cafe scraper...');
-    const naverResult = await naverScraper.scrape();
-    console.log('Naver scraper completed:', naverResult);
-    
-    // 运行 SOOP 爬虫
+
+    // 本地抓取 SOOP 公告板
     console.log('Manually triggering SOOP scraper...');
     const soopResult = await soopScraper.scrape();
     console.log('SOOP scraper completed:', soopResult);
-    
-    return new Response(JSON.stringify({ 
-      success: true, 
+
+    // Naver Cafe 由 VPS 抓取（代理 + 翻译），通知 VPS 立即执行一次
+    let naverTriggered = null;
+    const cfg = await getConfig(env, ['VPS_API_URL', 'VPS_API_KEY']);
+    if (cfg.VPS_API_URL && cfg.VPS_API_KEY) {
+      try {
+        const vpsRes = await fetch(`${cfg.VPS_API_URL}/trigger-scraper`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${cfg.VPS_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          signal: AbortSignal.timeout(15000)
+        });
+        naverTriggered = vpsRes.ok
+          ? await vpsRes.json()
+          : { error: `VPS returned ${vpsRes.status}` };
+      } catch (e) {
+        console.error('Trigger VPS scraper failed:', e);
+        naverTriggered = { error: e.message };
+      }
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
       message: '爬虫已触发',
       results: {
-        naver: naverResult,
-        soop: soopResult
+        soop: soopResult,
+        naver: naverTriggered
       }
     }), { headers });
   } catch (error) {
     console.error('Scraper failed:', error);
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: error.message 
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message
     }), {
       status: 500,
       headers

@@ -57,3 +57,6 @@ coverage/
 # PM2
 .pm2/
 
+# oh-my-claudecode 工具目录
+.omc/
+

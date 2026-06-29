@@ -177,9 +177,10 @@ node vps-server.js
   - 图片代理
   - 翻译接口
   - 管理员接口
-- `naver-scraper.js` - Naver Cafe 爬虫
-- `soop-scraper.js` - SOOP 直播爬虫
+- `soop-scraper.js` - SOOP 公告板爬虫（Workers Cron 每 10 分钟）
 - `d1-schema.sql` - 数据库表结构
+
+> Naver Cafe 文章抓取由 VPS 负责（需代理绕过地域限制 + 自动翻译），不在 Workers 端运行。
 
 #### 3. VPS 服务 (src/)
 
