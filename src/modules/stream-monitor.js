@@ -62,8 +62,10 @@ export class StreamMonitor {
 
         try {
             const url = `https://api-channel.sooplive.com/v1.1/channel/${userId}/home/section/broad`;
-            const response = await fetch(url);
-            
+            const response = await fetch(url, {
+                signal: AbortSignal.timeout(10_000)
+            });
+
             if (response.status === 404 || response.status === 204) {
                 return null;
             }
@@ -81,7 +83,11 @@ export class StreamMonitor {
             const data = JSON.parse(body);
             return this.normalizeBroadData(streamerId, data || {});
         } catch (error) {
-            logger.error('StreamMonitor', `获取直播详情失败: ${error.message}`);
+            if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+                logger.warn('StreamMonitor', `获取直播详情超时: ${streamerId}`);
+            } else {
+                logger.error('StreamMonitor', `获取直播详情失败: ${error.message}`);
+            }
             return null;
         }
     }
@@ -286,11 +292,20 @@ export class StreamMonitor {
     }
 
     async reconcileWithSoop() {
+        // 防止 60s 定时器重入：上一轮拉取若因上游慢响应未结束，本轮叠加会导致
+        // fetch/连接堆积，是 Socket 监听器泄漏的来源之一。
+        if (this._reconciling) {
+            logger.warn('StreamMonitor', 'SOOP 校准仍在进行中，跳过本轮');
+            return;
+        }
+        this._reconciling = true;
         try {
             const polledState = await this.fetchSoopState();
             await this.applyState(polledState, 'soop');
         } catch (error) {
             logger.error('StreamMonitor', `SOOP 校准失败: ${error.message}`);
+        } finally {
+            this._reconciling = false;
         }
     }
 

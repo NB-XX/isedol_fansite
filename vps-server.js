@@ -30,11 +30,7 @@ function hasD1ApiConfig() {
   return !!(CF_ACCOUNT_ID && CF_DATABASE_ID && CF_API_TOKEN);
 }
 
-async function queryD1(payload) {
-  if (!hasD1ApiConfig()) {
-    throw new Error('Cloudflare D1 API credentials are not configured');
-  }
-
+async function queryD1Once(payload, signal) {
   const response = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/d1/database/${CF_DATABASE_ID}/query`,
     {
@@ -43,7 +39,8 @@ async function queryD1(payload) {
         Authorization: `Bearer ${CF_API_TOKEN}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal
     }
   );
 
@@ -57,6 +54,39 @@ async function queryD1(payload) {
   }
 
   return data;
+}
+
+// D1 经常出现瞬时 5xx（500/503/504），这里做指数退避重试，避免整批同步因单次抖动失败。
+const D1_MAX_RETRIES = 4;
+const D1_REQUEST_TIMEOUT_MS = 30_000;
+
+async function queryD1(payload) {
+  if (!hasD1ApiConfig()) {
+    throw new Error('Cloudflare D1 API credentials are not configured');
+  }
+
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= D1_MAX_RETRIES; attempt++) {
+    const signal = AbortSignal.timeout(D1_REQUEST_TIMEOUT_MS);
+    try {
+      return await queryD1Once(payload, signal);
+    } catch (error) {
+      lastError = error;
+      const aborted = error.name === 'TimeoutError' || error.name === 'AbortError';
+      // 4xx（除 429 外）不会因重试而成功，直接放弃
+      const isClientError = /^D1 API error: 4\d\d/.test(error.message) && !/429/.test(error.message);
+      if (attempt === D1_MAX_RETRIES || isClientError) {
+        break;
+      }
+
+      const backoff = Math.min(1000 * 2 ** (attempt - 1), 8000);
+      console.warn(`⚠️  D1 请求失败（第 ${attempt}/${D1_MAX_RETRIES} 次），${backoff}ms 后重试: ${error.message}${aborted ? ' (超时)' : ''}`);
+      await new Promise((r) => setTimeout(r, backoff));
+    }
+  }
+
+  throw lastError;
 }
 
 async function loadRuntimeConfig() {
@@ -140,12 +170,22 @@ function authenticate(req, res, next) {
 }
 
 // 同步数据到 Cloudflare D1
+let syncingToD1 = false;
+
 async function syncToD1() {
   if (!hasD1ApiConfig()) {
     console.warn('⚠️  Cloudflare 配置未设置，跳过同步');
     return;
   }
 
+  // 定时器可能在上一轮尚未结束时再次触发（D1 抖动时尤为常见）。
+  // 重入会叠加 fetch/连接，是 Socket 监听器泄漏的主要来源，这里直接跳过本轮。
+  if (syncingToD1) {
+    console.warn('⏭️  上一轮同步尚未结束，跳过本次同步');
+    return;
+  }
+
+  syncingToD1 = true;
   try {
     console.log('🔄 开始同步数据到 D1...');
 
@@ -265,6 +305,8 @@ async function syncToD1() {
     console.log('✅ 数据同步完成');
   } catch (error) {
     console.error('❌ 同步失败:', error.message);
+  } finally {
+    syncingToD1 = false;
   }
 }
 
@@ -402,7 +444,9 @@ app.get('/broad-summary/:broadNo', authenticate, async (req, res) => {
 
     console.log(`📊 获取直播总结: ${broadNo}`);
 
-    const response = await fetch(`https://soop-ai-api.sooplive.co.kr/v1.1/broad-summary/kr/${broadNo}`);
+    const response = await fetch(`https://soop-ai-api.sooplive.co.kr/v1.1/broad-summary/kr/${broadNo}`, {
+      signal: AbortSignal.timeout(15_000)
+    });
 
     if (!response.ok) {
       console.warn(`⚠️  SOOP AI API 返回错误: ${response.status}`);
@@ -412,6 +456,10 @@ app.get('/broad-summary/:broadNo', authenticate, async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+      console.warn('⚠️  SOOP AI API 请求超时');
+      return res.status(504).json({ error: '获取直播总结超时' });
+    }
     console.error('❌ 获取直播总结失败:', error.message);
     res.status(500).json({ error: '获取直播总结失败' });
   }
@@ -440,4 +488,14 @@ process.on('SIGINT', () => {
   scraper?.stop();
   monitor?.stop();
   process.exit(0);
+});
+
+// Node 21 默认会把未捕获的 Promise rejection 当作致命错误抛出，导致 pm2 重启。
+// 这里只记录不退出，避免因上游（D1/SOOP）偶发抖动引发重启风暴。
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ 未处理的 Promise rejection（已忽略）:', reason?.message || reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ 未捕获的异常（已忽略）:', error?.stack || error?.message || error);
 });

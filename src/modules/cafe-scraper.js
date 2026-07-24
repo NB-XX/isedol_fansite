@@ -54,7 +54,7 @@ export class CafeScraper {
 
             const req = https.request(requestOptions, (res) => {
                 let stream = res;
-                
+
                 // 处理压缩响应
                 const encoding = res.headers['content-encoding'];
                 if (encoding === 'gzip') {
@@ -64,28 +64,33 @@ export class CafeScraper {
                 } else if (encoding === 'br') {
                     stream = res.pipe(zlib.createBrotliDecompress());
                 }
-                
+
                 let data = '';
                 stream.setEncoding('utf8');
-                
+
                 stream.on('data', (chunk) => {
                     data += chunk;
                 });
-                
+
                 stream.on('end', () => {
                     try {
                         const jsonData = JSON.parse(data);
-                        resolve({ 
-                            ok: res.statusCode >= 200 && res.statusCode < 300, 
-                            status: res.statusCode, 
-                            data: jsonData 
+                        resolve({
+                            ok: res.statusCode >= 200 && res.statusCode < 300,
+                            status: res.statusCode,
+                            data: jsonData
                         });
                     } catch (error) {
+                        // 解析失败也要销毁底层连接，避免代理池中的 keep-alive socket 卡住。
+                        res.destroy();
                         reject(new Error(`JSON parse error: ${error.message}, data: ${data.substring(0, 100)}`));
                     }
                 });
-                
+
                 stream.on('error', (error) => {
+                    // 流出错时主动销毁请求，确保代理能回收 socket，防止连接/监听器泄漏。
+                    res.destroy();
+                    req.destroy();
                     reject(error);
                 });
             });
