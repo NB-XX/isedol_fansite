@@ -189,7 +189,7 @@ async function syncToD1() {
   try {
     console.log('🔄 开始同步数据到 D1...');
 
-    const articles = db.getAllArticles().slice(0, 100);
+    const articles = db.getAllArticles().slice(-100);
     const streamStatus = db.getAllStreamStatus();
     const streamHistory = db.streamHistory || [];
 
