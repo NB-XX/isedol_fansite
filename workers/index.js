@@ -313,7 +313,7 @@ async function handleAPI(request, env, ctx) {
 
     // 批量翻译文章
     if (path === '/api/admin/articles/batch-translate' && request.method === 'POST') {
-      return batchTranslateArticles(request, env, corsHeaders);
+      return batchTranslateArticles(request, env, corsHeaders, ctx);
     }
 
     // 手动触发爬虫
@@ -354,27 +354,31 @@ async function handleAPI(request, env, ctx) {
 // 获取文章列表
 async function getArticles(request, env, headers) {
   const url = new URL(request.url);
-  const limit = parseInt(url.searchParams.get('limit')) || 20;
+  // 限制单页大小，防止 ?limit=超大值 拉取整表 / 撑爆 Worker
+  const limit = Math.min(parseInt(url.searchParams.get('limit')) || 20, 100);
   const cursor = url.searchParams.get('cursor');
 
-  let query = `
-    SELECT * FROM articles 
-    ORDER BY write_date DESC 
-    LIMIT ?
-  `;
-  
-  const params = [limit];
-
+  // 复合游标 (write_date|article_id)：单一 write_date 作游标时，若多篇文章
+  // 时间戳相同（SOOP 仅到秒），超出本页的同时间戳文章会被“本页 LIMIT 截断 +
+  // 下页 < 排除”永久跳过。复合游标用严格字典序避免丢数据。
+  let query;
+  const params = [];
   if (cursor) {
-    // 使用 write_date 作为游标，而不是 article_id
-    // cursor 应该是上一页最后一篇文章的 write_date
+    const [wd, aid] = cursor.split('|');
     query = `
-      SELECT * FROM articles 
-      WHERE write_date < ?
-      ORDER BY write_date DESC 
+      SELECT * FROM articles
+      WHERE (write_date < ?) OR (write_date = ? AND article_id < ?)
+      ORDER BY write_date DESC, article_id DESC
       LIMIT ?
     `;
-    params.unshift(parseInt(cursor));
+    params.push(parseInt(wd), parseInt(wd), parseInt(aid), limit);
+  } else {
+    query = `
+      SELECT * FROM articles
+      ORDER BY write_date DESC, article_id DESC
+      LIMIT ?
+    `;
+    params.push(limit);
   }
 
   const { results } = await env.DB.prepare(query).bind(...params).all();
@@ -409,8 +413,11 @@ async function getArticles(request, env, headers) {
   }));
 
   const hasMore = results.length === limit;
-  // 使用 write_date 作为下一页的游标
-  const nextCursor = hasMore ? articles[articles.length - 1].writeDate : null;
+  // 使用复合游标 write_date|article_id，避免同时间戳文章在翻页时丢失
+  const lastArticle = articles[articles.length - 1];
+  const nextCursor = hasMore && lastArticle
+    ? `${lastArticle.writeDate}|${lastArticle.articleId}`
+    : null;
 
   return new Response(JSON.stringify({
     articles,
@@ -471,9 +478,28 @@ async function proxyToVPS(request, env, headers) {
 async function proxyImage(request, headers) {
   const url = new URL(request.url);
   const imageUrl = url.searchParams.get('url');
-  
+
   if (!imageUrl) {
     return new Response('Missing image URL', { status: 400, headers });
+  }
+
+  // SSRF 防护：仅允许 Naver / SOOP 图片域名，拒绝任意 URL 代理
+  let parsed;
+  try {
+    parsed = new URL(imageUrl);
+  } catch {
+    return new Response('Invalid image URL', { status: 400, headers });
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return new Response('Unsupported protocol', { status: 400, headers });
+  }
+  const host = parsed.hostname.toLowerCase();
+  const allowedSuffixes = ['pstatic.net', 'sooplive.co.kr', 'sooplive.com', 'naver.com'];
+  const isAllowed = host === 'localhost'
+    ? false
+    : allowedSuffixes.some(s => host === s || host.endsWith('.' + s));
+  if (!isAllowed) {
+    return new Response('URL not allowed', { status: 403, headers });
   }
 
   try {
@@ -725,8 +751,16 @@ async function adminAuth(request, env, headers) {
     
     // 从 D1 读取管理员密码
     const config = await getConfig(env, ['ADMIN_PASSWORD']);
-    const adminPassword = config.ADMIN_PASSWORD || 'roboco520'; // 默认密码
-    
+    const adminPassword = config.ADMIN_PASSWORD;
+
+    // 未配置管理员密码时拒绝认证，避免回退到默认凭据
+    if (!adminPassword) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: '管理员密码未配置'
+      }), { status: 401, headers });
+    }
+
     if (password === adminPassword) {
       // 生成简单的 token（实际应该使用 JWT）
       const token = btoa(`admin:${Date.now()}:${password}`);
@@ -763,8 +797,13 @@ async function verifyAdminToken(request, env) {
     
     // 从 D1 读取管理员密码
     const config = await getConfig(env, ['ADMIN_PASSWORD']);
-    const adminPassword = config.ADMIN_PASSWORD || 'roboco520';
-    
+    const adminPassword = config.ADMIN_PASSWORD;
+
+    // 未配置管理员密码时拒绝认证，避免回退到默认凭据
+    if (!adminPassword) {
+      return false;
+    }
+
     // 验证密码和时间戳（24小时有效）
     if (user === 'admin' && password === adminPassword) {
       const tokenTime = parseInt(timestamp);
@@ -782,7 +821,7 @@ async function verifyAdminToken(request, env) {
 
 // 获取管理员统计
 async function getAdminStats(request, env, headers) {
-  if (!verifyAdminToken(request, env)) {
+  if (!await verifyAdminToken(request, env)) {
     return new Response(JSON.stringify({ error: '未授权' }), {
       status: 401,
       headers
@@ -877,7 +916,7 @@ async function getAdminStats(request, env, headers) {
 
 // 获取管理员文章列表
 async function getAdminArticles(request, env, headers) {
-  if (!verifyAdminToken(request, env)) {
+  if (!await verifyAdminToken(request, env)) {
     return new Response(JSON.stringify({ error: '未授权' }), {
       status: 401,
       headers
@@ -886,7 +925,7 @@ async function getAdminArticles(request, env, headers) {
 
   const url = new URL(request.url);
   const page = parseInt(url.searchParams.get('page')) || 1;
-  const limit = parseInt(url.searchParams.get('limit')) || 20;
+  const limit = Math.min(parseInt(url.searchParams.get('limit')) || 20, 100);
   const offset = (page - 1) * limit;
 
   try {
@@ -961,7 +1000,7 @@ async function getAdminArticles(request, env, headers) {
 
 // 删除文章
 async function deleteArticle(request, env, headers, articleId) {
-  if (!verifyAdminToken(request, env)) {
+  if (!await verifyAdminToken(request, env)) {
     return new Response(JSON.stringify({ error: '未授权' }), {
       status: 401,
       headers
@@ -984,7 +1023,7 @@ async function deleteArticle(request, env, headers, articleId) {
 
 // 批量删除文章
 async function batchDeleteArticles(request, env, headers) {
-  if (!verifyAdminToken(request, env)) {
+  if (!await verifyAdminToken(request, env)) {
     return new Response(JSON.stringify({ error: '未授权' }), {
       status: 401,
       headers
@@ -1020,8 +1059,8 @@ async function batchDeleteArticles(request, env, headers) {
 }
 
 // 批量翻译文章
-async function batchTranslateArticles(request, env, headers) {
-  if (!verifyAdminToken(request, env)) {
+async function batchTranslateArticles(request, env, headers, ctx) {
+  if (!await verifyAdminToken(request, env)) {
     return new Response(JSON.stringify({ error: '未授权' }), {
       status: 401,
       headers
@@ -1153,16 +1192,19 @@ async function batchTranslateArticles(request, env, headers) {
       }
     });
 
-    // 等待所有翻译完成（最多30秒）
-    await Promise.race([
-      Promise.all(translationPromises),
-      new Promise(resolve => setTimeout(resolve, 30000))
-    ]);
+    // 用 ctx.waitUntil 让翻译在响应返回后继续完成，
+    // 避免 Worker 返回响应后进行中的翻译 fetch 被掐断而静默丢失。
+    const allDone = Promise.allSettled(translationPromises);
+    if (ctx && typeof ctx.waitUntil === 'function') {
+      ctx.waitUntil(allDone);
+    } else {
+      await allDone;
+    }
 
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       success: true,
       total: articles.length,
-      message: `正在翻译 ${articles.length} 篇文章`
+      message: `正在后台翻译 ${articles.length} 篇文章`
     }), { headers });
   } catch (error) {
     console.error('批量翻译失败:', error);
@@ -1338,7 +1380,7 @@ async function manualTranslateArticle(id, request, env, headers) {
 
 // 删除文章翻译
 async function deleteArticleTranslation(id, request, env, headers) {
-  if (!verifyAdminToken(request, env)) {
+  if (!await verifyAdminToken(request, env)) {
     return new Response(JSON.stringify({ error: '未授权' }), {
       status: 401,
       headers
@@ -1386,10 +1428,20 @@ async function translateJson(request, env, headers) {
     }
     
     const { data } = requestData;
-    
+
     if (!data) {
       return new Response(JSON.stringify({ error: '请提供要翻译的数据' }), {
         status: 400,
+        headers
+      });
+    }
+
+    // 限制输入体积，防止用超大 JSON 滥用翻译 API（烧额度）
+    const MAX_TRANSLATE_JSON_BYTES = 64 * 1024;
+    const serialized = JSON.stringify(data);
+    if (serialized.length > MAX_TRANSLATE_JSON_BYTES) {
+      return new Response(JSON.stringify({ error: '待翻译数据过大' }), {
+        status: 413,
         headers
       });
     }
