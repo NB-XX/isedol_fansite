@@ -215,13 +215,36 @@ async function syncToD1() {
 
     for (const article of articles) {
       statements.push({
-        sql: `INSERT OR REPLACE INTO articles (
+        // 用 UPSERT 代替 INSERT OR REPLACE：原文列从 VPS 覆盖（VPS 是原文真相），
+        // 但翻译列用 COALESCE(excluded, 现有) —— VPS 内存里没有译文时不要把
+        // D1 里 Worker 已经写入的译文清成 NULL。否则每次 VPS 同步都会抹掉
+        // 前端点击翻译后写进 D1 的 is_ai_translated/subject_translated 等。
+        sql: `INSERT INTO articles (
           article_id, subject, subject_translated, content, content_translated,
           content_html, content_html_translated, text_content, write_date,
           write_date_formatted, writer_json, menu_json, read_count,
           comment_count, like_count, source, is_ai_translated,
           translated_at, fetched_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(article_id) DO UPDATE SET
+          subject = excluded.subject,
+          content = excluded.content,
+          content_html = excluded.content_html,
+          text_content = excluded.text_content,
+          write_date = excluded.write_date,
+          write_date_formatted = excluded.write_date_formatted,
+          writer_json = excluded.writer_json,
+          menu_json = excluded.menu_json,
+          read_count = excluded.read_count,
+          comment_count = excluded.comment_count,
+          like_count = excluded.like_count,
+          source = excluded.source,
+          fetched_at = excluded.fetched_at,
+          subject_translated = COALESCE(excluded.subject_translated, articles.subject_translated),
+          content_translated = COALESCE(excluded.content_translated, articles.content_translated),
+          content_html_translated = COALESCE(excluded.content_html_translated, articles.content_html_translated),
+          is_ai_translated = COALESCE(excluded.is_ai_translated, articles.is_ai_translated),
+          translated_at = COALESCE(excluded.translated_at, articles.translated_at)`,
         params: [
           article.articleId,
           article.subject,
@@ -239,7 +262,9 @@ async function syncToD1() {
           article.commentCount || 0,
           article.likeCount || 0,
           article.source || 'naver',
-          article.isAiTranslated || 0,
+          // 没有 VPS 端译文时传 NULL（配合 COALESCE 保留 D1 现值），
+          // 而不是 0（0 会覆盖 Worker 写入的 1）。
+          article.isAiTranslated ?? null,
           article.translatedAt || null,
           article.fetchedAt
         ]
@@ -466,16 +491,25 @@ app.get('/broad-summary/:broadNo', authenticate, async (req, res) => {
 });
 
 async function bootstrap() {
-  await loadRuntimeConfig();
-  await startServices();
-  await syncToD1();
-
+  // 先把 HTTP 服务起起来，再慢慢加载配置/启动爬虫/同步 D1。
+  // 之前是 await 完 startServices()(首次抓取 ~15-20s) + syncToD1() 才 app.listen，
+  // 每次重启都有 20-30s 窗口 /sync /health 不可用；抓取或 D1 卡住时甚至无限期不可用。
   app.listen(PORT, () => {
     console.log(`🚀 VPS 服务器运行在端口 ${PORT}`);
-    console.log(`📡 直播监控: ${monitor?.isRunning ? '运行中' : '已停止'}`);
-    console.log(`🕷️  定时爬虫: ${scraper?.isRunning ? '运行中' : '已停止'}`);
-    console.log(`🔑 API Key: ${runtimeApiKey.substring(0, 8)}...`);
+    console.log(`📡 直播监控: ${monitor?.isRunning ? '运行中' : '启动中'}`);
+    console.log(`🕷️  定时爬虫: ${scraper?.isRunning ? '运行中' : '启动中'}`);
+    console.log(`🔑 API Key: ${runtimeApiKey ? runtimeApiKey.substring(0, 8) + '...' : '(未配置)'}`);
   });
+
+  // 后台加载配置 + 启动服务 + 首次同步（不阻塞 app.listen）
+  try {
+    await loadRuntimeConfig();
+    await startServices();
+    await syncToD1();
+    console.log('✅ 后台启动流程完成（配置加载 + 服务启动 + 首次同步）');
+  } catch (error) {
+    console.error('❌ 后台启动流程出错:', error.message);
+  }
 }
 
 await bootstrap();

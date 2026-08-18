@@ -269,25 +269,17 @@ export class CafeScraper {
             const article = await this.processArticle(item.item);
             
             if (article) {
-                // 如果启用翻译，自动翻译新文章
-                if (this.translator.isEnabled) {
-                    try {
-                        logger.info('CafeScraper', `翻译文章: ${article.articleId}`);
-                        const translation = await this.translator.translateArticle(article);
-                        article.subjectTranslated = translation.subjectTranslated;
-                        article.contentTranslated = translation.contentTranslated;
-                        article.isAiTranslated = 1; // 标记为AI翻译
-                        article.translatedAt = new Date().toISOString();
-                    } catch (error) {
-                        logger.error('CafeScraper', `翻译失败: ${error.message}`);
-                    }
-                }
-                
+                // 翻译改为按需触发：前端点击"翻译"时由 Worker 直接调 LLM 并写 D1。
+                // 这里不再在每次抓取时自动翻译——Translator 有 20s/篇的速率限制，
+                // 15 篇会阻塞 5~10 分钟，导致 vps-server.js 启动时 app.listen 迟迟不触发，
+                // HTTP 服务（/sync /translate /health）长时间不可用。
+                // 如确需自动翻译，另起后台任务并在 app.listen 之后再跑，不要卡在 start() 里。
+
                 this.db.addArticle(article);
                 newCount++;
-                
+
                 logger.success('CafeScraper', `新文章: [${article.writer.nick}] ${article.subject}`);
-                
+
                 // 添加延迟避免请求过快
                 await this.sleep(1000);
             }

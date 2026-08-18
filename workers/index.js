@@ -1095,8 +1095,11 @@ async function batchTranslateArticles(request, env, headers, ctx) {
       config[row.key] = value;
     });
 
-    // 检查翻译是否启用
-    if (config.TRANSLATION_ENABLED !== '1') {
+    // 检查翻译是否启用（归一化：接受 '1'/'1.0'/'true'/'yes'/'on'/数字>0）
+    const isEnabled = ['1', '1.0', 'true', 'yes', 'on'].includes(
+      String(config.TRANSLATION_ENABLED ?? '').trim().toLowerCase()
+    ) || parseFloat(config.TRANSLATION_ENABLED) > 0;
+    if (!isEnabled) {
       return new Response(JSON.stringify({ error: '翻译功能未启用' }), {
         status: 400,
         headers
@@ -1217,10 +1220,18 @@ async function batchTranslateArticles(request, env, headers, ctx) {
 
 // 翻译文章
 async function translateArticle(id, request, env, headers) {
-  // 检查是否已有翻译
+  const articleId = parseInt(id);
+  if (Number.isNaN(articleId)) {
+    return new Response(JSON.stringify({ error: '无效的文章 ID' }), {
+      status: 400,
+      headers
+    });
+  }
+
+  // 检查是否已有翻译（同时取出原文用于翻译）
   const { results } = await env.DB.prepare(
-    'SELECT subject_translated, content_translated FROM articles WHERE article_id = ?'
-  ).bind(parseInt(id)).all();
+    'SELECT subject, content, subject_translated, content_translated FROM articles WHERE article_id = ?'
+  ).bind(articleId).all();
 
   if (results.length === 0) {
     return new Response(JSON.stringify({ error: '文章不存在' }), {
@@ -1230,8 +1241,8 @@ async function translateArticle(id, request, env, headers) {
   }
 
   const article = results[0];
-  
-  // 如果已有翻译，直接返回
+
+  // 如果已有翻译，直接返回缓存
   if (article.subject_translated && article.content_translated) {
     return new Response(JSON.stringify({
       translation: {
@@ -1241,36 +1252,121 @@ async function translateArticle(id, request, env, headers) {
     }), { headers });
   }
 
-  // 调用翻译 API（这里需要配置你的翻译服务）
-  // 或者调用 VPS 上的翻译服务
   try {
-    // 从 D1 读取 VPS 配置
-    const config = await getConfig(env, ['VPS_API_URL', 'VPS_API_KEY']);
-    
-    const response = await fetch(config.VPS_API_URL + '/translate', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.VPS_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ articleId: id })
+    // 直接在 Worker 内调用 LLM，不再回源 VPS。
+    // 原实现 fetch(config.VPS_API_URL + '/translate') 会从 Worker 发 subrequest 到
+    // 裸 IP + 非标准端口 + 明文 HTTP，Cloudflare Workers 运行时不稳定，
+    // 是"翻译服务暂时不可用"(catch-all 503) 的根因。
+    const { results: configResults } = await env.DB.prepare(`
+      SELECT key, value FROM settings
+      WHERE key IN ('TRANSLATION_ENABLED', 'TRANSLATION_API_URL', 'TRANSLATION_API_KEY',
+                    'TRANSLATION_MODEL', 'TRANSLATION_SYSTEM_PROMPT', 'TRANSLATION_TEMPERATURE',
+                    'TRANSLATION_MAX_TOKENS', 'TRANSLATION_TIMEOUT')
+    `).all();
+
+    const config = {};
+    configResults.forEach(row => {
+      let value = row.value;
+      // 移除可能的引号
+      if (typeof value === 'string' && value.startsWith('"') && value.endsWith('"')) {
+        value = value.slice(1, -1);
+      }
+      config[row.key] = value;
     });
 
-    const data = await response.json();
-    
-    // 如果翻译成功，更新数据库标记为AI翻译
-    if (data.translation) {
-      await env.DB.prepare(`
-        UPDATE articles 
-        SET is_ai_translated = 1,
-            translated_at = CURRENT_TIMESTAMP
-        WHERE article_id = ?
-      `).bind(parseInt(id)).run();
+    const isEnabled = ['1', '1.0', 'true', 'yes', 'on'].includes(
+      String(config.TRANSLATION_ENABLED ?? '').trim().toLowerCase()
+    ) || parseFloat(config.TRANSLATION_ENABLED) > 0;
+    if (!isEnabled) {
+      return new Response(JSON.stringify({ error: '翻译功能未启用' }), {
+        status: 400,
+        headers
+      });
     }
-    
-    return new Response(JSON.stringify(data), { headers });
+
+    if (!config.TRANSLATION_API_URL || !config.TRANSLATION_API_KEY) {
+      return new Response(JSON.stringify({ error: '翻译配置不完整' }), {
+        status: 400,
+        headers
+      });
+    }
+
+    const systemPrompt = config.TRANSLATION_SYSTEM_PROMPT ||
+      '你是一个专业的韩中翻译，请将以下韩文内容翻译成中文。保持原文的语气和风格，确保翻译准确流畅。';
+    const apiUrl = config.TRANSLATION_API_URL;
+    const model = config.TRANSLATION_MODEL || 'gpt-3.5-turbo';
+    const temperature = parseFloat(config.TRANSLATION_TEMPERATURE || '0.3');
+    const maxTokens = parseInt(config.TRANSLATION_MAX_TOKENS || '2000');
+    const timeoutMs = parseInt(config.TRANSLATION_TIMEOUT || '30000');
+
+    // 标题、正文分别翻译，互不依赖正则切分，结果更可靠；并发以缩短等待
+    const callLLM = async (text) => {
+      if (!text || text.trim().length === 0) return null;
+      const resp = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.TRANSLATION_API_KEY}`
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: text }
+          ],
+          temperature,
+          max_tokens: maxTokens
+        }),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+
+      if (!resp.ok) {
+        throw new Error(`翻译 API 返回 ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+      }
+      const data = await resp.json();
+      if (!data.choices || data.choices.length === 0) {
+        throw new Error('翻译 API 未返回 choices');
+      }
+      return data.choices[0].message.content.trim();
+    };
+
+    const [subjectTranslated, contentTranslated] = await Promise.all([
+      callLLM(article.subject).catch(() => null),
+      callLLM(article.content).catch(() => null)
+    ]);
+
+    if (!subjectTranslated && !contentTranslated) {
+      return new Response(JSON.stringify({ error: '翻译失败：LLM 未返回结果' }), {
+        status: 502,
+        headers
+      });
+    }
+
+    const finalSubject = subjectTranslated || article.subject || '';
+    const finalContent = contentTranslated || article.content || '';
+
+    // 译文直接写入 D1（单一数据源，无需 VPS 内存库 + syncToD1 中转）
+    await env.DB.prepare(`
+      UPDATE articles
+      SET subject_translated = ?,
+          content_translated = ?,
+          content_html_translated = ?,
+          is_ai_translated = 1,
+          translated_at = CURRENT_TIMESTAMP
+      WHERE article_id = ?
+    `).bind(
+      finalSubject,
+      finalContent,
+      finalContent.replace(/\n/g, '<br>'),
+      articleId
+    ).run();
+
+    return new Response(JSON.stringify({
+      translation: { subject: finalSubject, content: finalContent }
+    }), { headers });
   } catch (error) {
-    return new Response(JSON.stringify({ error: '翻译服务暂时不可用' }), {
+    console.error('translateArticle 失败:', error);
+    return new Response(JSON.stringify({ error: '翻译服务暂时不可用', detail: error.message }), {
       status: 503,
       headers
     });
